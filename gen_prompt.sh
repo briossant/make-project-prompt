@@ -16,11 +16,11 @@
 # PRÉREQUIS: git, tree, xsel, file
 
 # --- Variables par défaut ---
-INCLUDE_PATTERNS=() # Sera initialisé à '*' si vide
-EXCLUDE_OPTS=()     # Tableau pour stocker les options --exclude
+INCLUDE_PATTERNS=()
+EXCLUDE_OPTS=()     
 LLM_QUESTION="[VOTRE QUESTION ICI]"
-TREE_IGNORE_DIRS=".git|node_modules|vendor|dist|build" # Pour la clarté de l'arbre 'tree'
-TREE_MAX_DEPTH="" # Exemple: "-L 3"
+TREE_IGNORE_DIRS=".git|node_modules|vendor|dist|build" 
+TREE_MAX_DEPTH="" 
 
 # --- Fonction d'aide ---
 show_usage() {
@@ -51,9 +51,8 @@ while getopts "hi:e:q:" opt; do
 done
 shift $((OPTIND-1)) # Retire les options traitées
 
-# Si aucun pattern d'inclusion n'a été fourni, utiliser '*' par défaut
 if [ ${#INCLUDE_PATTERNS[@]} -eq 0 ]; then
-  INCLUDE_PATTERNS=("*")
+  INCLUDE_PATTERNS=(".")
 fi
 
 # --- Vérification des commandes nécessaires ---
@@ -87,9 +86,7 @@ TREE_CMD="tree"
 if [ -n "$TREE_MAX_DEPTH" ]; then
   TREE_CMD+=" $TREE_MAX_DEPTH"
 fi
-# L'option -I de tree ne gère pas les patterns complexes comme git ls-files,
-# donc on garde une exclusion simple basée sur TREE_IGNORE_DIRS.
-# Les patterns -e de l'utilisateur ne sont PAS appliqués à tree ici pour simplifier.
+
 if [ -n "$TREE_IGNORE_DIRS" ]; then
   if tree --help | grep -q "\-I pattern"; then
     TREE_CMD+=" -I '$TREE_IGNORE_DIRS'"
@@ -103,7 +100,7 @@ PROMPT_CONTENT+="$PROJECT_TREE\n\n"
 # 3. Contenu des fichiers pertinents
 PROMPT_CONTENT+="--- CONTENU DES FICHIERS (basé sur git ls-files, respectant .gitignore et les options -i/-e) ---\n"
 FILE_COUNTER=0
-TOTAL_SIZE=0 # Pourrait être calculé si besoin
+TOTAL_SIZE=0 
 
 # Construit la commande git ls-files
 # -c: cached (tracked) / -o: others (untracked but not ignored)
@@ -117,15 +114,12 @@ GIT_LS_FILES_CMD=(git ls-files -co --exclude-standard "${EXCLUDE_OPTS[@]}" -- "$
 # echo "Commande git ls-files:"
 # printf "%q " "${GIT_LS_FILES_CMD[@]}"; echo
 
-# Exécute la commande et traite chaque fichier listé
 "${GIT_LS_FILES_CMD[@]}" | while IFS= read -r file; do
-  # Vérifie si le fichier existe et est lisible (parfois ls-files peut lister des choses étranges)
    if [ ! -f "$file" ] || [ ! -r "$file" ]; then
-    # echo >&2 "Attention: Fichier '$file' listé par git mais non trouvé ou illisible. Ignoré."
+    echo >&2 "Attention: Fichier '$file' listé par git mais non trouvé ou illisible. Ignoré."
     continue
   fi
 
-  # Vérifie si le fichier semble être du texte
   MIME_TYPE=$(file -b --mime-type "$file")
    if [[ "$MIME_TYPE" != text/* && \
          "$MIME_TYPE" != application/json && \
@@ -142,27 +136,22 @@ GIT_LS_FILES_CMD=(git ls-files -co --exclude-standard "${EXCLUDE_OPTS[@]}" -- "$
      continue
   fi
 
-  # Vérification optionnelle de taille (décommenter et adapter si besoin)
-  # FILE_SIZE=$(stat -c%s "$file")
-  # if [ "$FILE_SIZE" -gt 1048576 ]; then # 1 Mo
-  #   echo "Info: Fichier '$file' ignoré car trop volumineux (> 1MB)."
-  #   continue
-  # fi
+  FILE_SIZE=$(stat -c%s "$file")
+  if [ "$FILE_SIZE" -gt 1048576 ]; then # 1 Mo
+    echo "Info: Fichier '$file' ignoré car trop volumineux (> 1MB)."
+    continue
+  fi
 
   PROMPT_CONTENT+="\n--- FICHIER: $file ---\n"
-  # Utilise 'cat'. Redirige stderr pour éviter les messages d'erreur dans le prompt.
   FILE_CONTENT=$(cat "$file" 2>/dev/null)
-  # Vérifie si cat a réussi (le fichier pourrait avoir été supprimé entre ls-files et cat)
   if [ $? -ne 0 ]; then
       echo >&2 "Attention: Échec de la lecture du contenu de '$file' avec cat. Ignoré."
-      # Nettoie le marqueur de fichier ajouté précédemment
       PROMPT_CONTENT="${PROMPT_CONTENT%--- FICHIER: $file ---*}"
       continue
   fi
   PROMPT_CONTENT+="$FILE_CONTENT"
   PROMPT_CONTENT+="\n--- FIN FICHIER: $file ---\n"
   ((FILE_COUNTER++))
-  # Pourrait ajouter une logique pour calculer et vérifier la taille totale du prompt ici
 done
 
 PROMPT_CONTENT+="\n--- FIN DU CONTENU DES FICHIERS ---\n"
@@ -171,14 +160,13 @@ PROMPT_CONTENT+="\n--- FIN DU CONTENU DES FICHIERS ---\n"
 PROMPT_CONTENT+="\nBasé sur le contexte fourni ci-dessus, réponds à la question suivante :\n\n$LLM_QUESTION\n"
 
 # --- Copie dans le presse-papiers ---
-# Utilise printf pour une meilleure gestion des caractères spéciaux
 printf "%s" "$PROMPT_CONTENT" | xsel -ib
 
 # --- Feedback Utilisateur ---
 echo "-------------------------------------"
 echo "Prompt généré et copié dans le presse-papiers !"
 echo "Nombre de fichiers inclus : $FILE_COUNTER"
-# Pourrait afficher la taille totale ici si calculée
+# TODO: afficher la taille totale ici 
 if [[ "$LLM_QUESTION" == "[VOTRE QUESTION ICI]" ]]; then
     echo "NOTE : Aucune question spécifiée avec -q. N'oubliez pas de remplacer '[VOTRE QUESTION ICI]'."
 fi
