@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"mime"
 	"os"
@@ -56,11 +55,6 @@ func listGitFiles(includePatterns, excludePatterns []string) ([]string, error) {
 	// Build git ls-files command
 	args := []string{"ls-files", "-co", "--exclude-standard"}
 
-	// Add exclude patterns
-	for _, pattern := range excludePatterns {
-		args = append(args, "--exclude="+pattern)
-	}
-
 	// Add -- separator and include patterns
 	args = append(args, "--")
 	if len(includePatterns) > 0 {
@@ -69,6 +63,9 @@ func listGitFiles(includePatterns, excludePatterns []string) ([]string, error) {
 		// Default to all files if no include patterns specified
 		args = append(args, "*")
 	}
+
+	// Uncomment for debugging
+	// fmt.Printf("Debug - git command: git %s\n", strings.Join(args, " "))
 
 	cmd := exec.Command("git", args...)
 	var stdout, stderr bytes.Buffer
@@ -88,6 +85,29 @@ func listGitFiles(includePatterns, excludePatterns []string) ([]string, error) {
 	}
 
 	files := strings.Split(output, "\n")
+
+	// Apply exclude patterns
+	if len(excludePatterns) > 0 {
+		var filteredFiles []string
+		for _, file := range files {
+			excluded := false
+			for _, pattern := range excludePatterns {
+				matched, err := filepath.Match(pattern, file)
+				if err != nil {
+					return nil, fmt.Errorf("invalid exclude pattern '%s': %w", pattern, err)
+				}
+				if matched {
+					excluded = true
+					break
+				}
+			}
+			if !excluded {
+				filteredFiles = append(filteredFiles, file)
+			}
+		}
+		files = filteredFiles
+	}
+
 	return files, nil
 }
 
@@ -113,6 +133,11 @@ func getProjectTree() (string, error) {
 
 // isTextFile checks if a file is a text file based on its MIME type
 func isTextFile(filePath string) bool {
+	// Special case for Go module files
+	if filepath.Base(filePath) == "go.mod" || filepath.Base(filePath) == "go.sum" {
+		return true
+	}
+
 	// Get file extension
 	ext := filepath.Ext(filePath)
 
@@ -143,7 +168,8 @@ func isTextFile(filePath string) bool {
 				".ex": true, ".exs": true, ".erl": true, ".hs": true, ".lua": true,
 				".pl": true, ".pm": true, ".r": true, ".dart": true, ".gradle": true,
 				".ini": true, ".cfg": true, ".conf": true, ".properties": true,
-				".gitignore": true, ".dockerignore": true, ".env": true,
+				".gitignore": true, ".dockerignore": true, ".env": true, ".mod": true,
+				".sum": true, ".lock": true,
 			}
 
 			if knownTextExtensions[strings.ToLower(ext)] {
