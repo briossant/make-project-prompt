@@ -26,8 +26,8 @@
           inherit pname version;
           src = ./.;
 
-          # This will be computed by Nix based on the Go dependencies
-          vendorHash = null;
+          # Use the computed hash for the vendor directory
+          vendorHash = "sha256-ewCKket3ARSY+AQLjWRdauEl5fMdamNXWCk3WMRjgBk=";
 
           nativeBuildInputs = [ pkgs.makeWrapper ];
 
