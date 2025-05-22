@@ -15,19 +15,34 @@ This allows you to provide rich and precise context to the LLM for questions reg
     *   Selectively includes/excludes files/folders using glob patterns (`-i` and `-e` options).
     *   Automatically excludes binary files (based on MIME type).
     *   Excludes common directories like `.git`, `node_modules`, etc. from the `tree` output for clarity.
-*   **Easy Integration:** Copies the generated prompt directly to the clipboard (`xsel`).
+*   **Easy Integration:** Copies the generated prompt directly to the clipboard.
 *   **Direct Question:** Allows you to specify the question for the LLM directly via the `-q` option.
-*   **Convenient Alias:** Available via the `make-project-prompt` command or the `mpp` alias.
+*   **Cross-Platform:** Written in Go for better performance and cross-platform compatibility.
 *   **Packaged with Nix Flakes:** Easy to run, install, and integrate into Nix/NixOS environments.
 
 ## Prerequisites
 
+*   **Git:** The tool uses `git ls-files` to list files and respect `.gitignore`.
+*   **Tree:** Used to generate the project structure visualization.
+*   **File (optional):** Used to detect binary files. If not available, the tool will use heuristics.
+
+For Nix users:
 *   **Nix:** You must have [Nix installed](https://nixos.org/download.html) on your system.
 *   **Flakes:** The [Nix Flakes](https://nixos.wiki/wiki/Flakes) feature must be enabled (this is often the case by default on recent installations; otherwise, follow the instructions in the Nix documentation).
 
-The tool itself depends on `bash`, `git`, `tree`, `xsel`, and `file`, but **Nix automatically handles the installation of these dependencies** when you use one of the methods below.
-
 ## Installation and Usage
+
+### Go Installation
+
+If you have Go installed, you can install the tool directly:
+
+```bash
+go install github.com/briossant/make-project-prompt@latest
+```
+
+This will install the `make-project-prompt` command in your `$GOPATH/bin` directory.
+
+### Nix Installation
 
 You can use `make-project-prompt` in several ways thanks to Nix Flakes:
 
@@ -150,14 +165,21 @@ mpp -i 'src/*' -i 'include/*' -e '*_test.go' -q "Check if there are any concurre
 
 ## Development
 
-If you want to contribute or modify the script:
+If you want to contribute or modify the code:
 
 1.  Clone the repository: `git clone https://github.com/briossant/make-project-prompt.git`
 2.  Enter the directory: `cd make-project-prompt`
-3.  Start a Nix development shell: `nix develop .`
+3.  Make your changes to the Go code
+4.  Build and test: `go build` and `./make-project-prompt`
 
-In this shell, you will have access to the dependencies (`git`, `tree`, `xsel`, `file`), `shellcheck` to validate the script (`shellcheck gen_prompt.sh`), and the `make-project-prompt` command (pointing to your local version) will be in the PATH for quick testing.
+For Nix users, you can start a Nix development shell:
+
+```bash
+nix develop .
+```
+
+In this shell, you will have access to the dependencies (`git`, `tree`, `file`), and the development tools needed for working on the project.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details (remember to add a LICENSE file if you haven't already).
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

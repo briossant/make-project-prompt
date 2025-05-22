@@ -14,32 +14,26 @@
         lib = pkgs.lib;
 
         pname = "make-project-prompt";
-        version = "0.1.1";
+        version = "0.2.0";
 
-        scriptFile = ./gen_prompt.sh;
-
-        scriptDeps = with pkgs; [
+        runtimeDeps = with pkgs; [
           gitMinimal
           tree
-          xsel
           file
-          coreutils
-          bash
         ];
 
-        makeProjectPromptPackage = pkgs.stdenv.mkDerivation {
+        makeProjectPromptPackage = pkgs.buildGoModule {
           inherit pname version;
           src = ./.;
 
-          nativeBuildInputs = [ pkgs.makeWrapper ];
-          dontBuild = true;
+          # This will be computed by Nix based on the Go dependencies
+          vendorHash = null;
 
-          installPhase = ''
-            runHook preInstall
-            install -Dm 755 ${scriptFile} $out/bin/${pname}
+          nativeBuildInputs = [ pkgs.makeWrapper ];
+
+          postInstall = ''
             ln -s $out/bin/${pname} $out/bin/mpp
-            wrapProgram $out/bin/${pname} --prefix PATH : ${lib.makeBinPath scriptDeps}
-            runHook postInstall
+            wrapProgram $out/bin/${pname} --prefix PATH : ${lib.makeBinPath runtimeDeps}
           '';
 
           meta = with lib; {
@@ -47,13 +41,14 @@
             longDescription = ''
               Generates a contextual prompt for LLMs based on the current Git project.
               Includes 'tree' output and content of relevant files (respecting .gitignore,
-              with include/exclude options), then copies the result to the clipboard via xsel.
+              with include/exclude options), then copies the result to the clipboard.
+              Written in Go for cross-platform compatibility.
               Available as 'make-project-prompt' or 'mpp'.
             '';
             homepage = "https://github.com/briossant/make-project-prompt";
             license = licenses.mit;
             maintainers = with maintainers; [ "briossant" ];
-            platforms = platforms.unix;
+            platforms = platforms.all;
             mainProgram = "make-project-prompt";
           };
         };
@@ -75,9 +70,12 @@
         apps.default = self.apps.${system}.${pname};
 
         devShells.default = pkgs.mkShell {
-          packages = scriptDeps ++ [
-            pkgs.shellcheck
-            pkgs.bashInteractive
+          packages = runtimeDeps ++ [
+            pkgs.go
+            pkgs.gopls
+            pkgs.gotools
+            pkgs.go-tools
+            pkgs.golangci-lint
             makeProjectPromptPackage
           ];
         };
