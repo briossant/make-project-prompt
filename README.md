@@ -17,7 +17,11 @@ This allows you to provide rich and precise context to the LLM for questions reg
     *   Automatically excludes binary files (based on MIME type).
     *   Excludes common directories like `.git`, `node_modules`, etc. from the `tree` output for clarity.
 *   **Easy Integration:** Copies the generated prompt directly to the clipboard.
-*   **Direct Question:** Allows you to specify the question for the LLM directly via the `-q` option.
+*   **Flexible Question Input:** 
+    *   Specify the question directly via the `-q` option.
+    *   Use content from your clipboard via the `-c` option.
+    *   Read question from a file via the `-qf` option.
+    *   Multiple input methods supported with "last one wins" precedence.
 *   **Cross-Platform:** Written in Go for better performance and cross-platform compatibility.
 *   **Packaged with Nix Flakes:** Easy to run, install, and integrate into Nix/NixOS environments.
 
@@ -136,7 +140,7 @@ After rebuilding (`nixos-rebuild switch` or `home-manager switch`), the commands
 ## Command Options
 
 ```bash
-Usage: make-project-prompt [-i <include_pattern>] [-e <exclude_pattern>] [-f <force_include_pattern>] [-q "question"] [-h]
+Usage: make-project-prompt [-i <include_pattern>] [-e <exclude_pattern>] [-f <force_include_pattern>] [-q "question"] [-c] [-qf file] [-h]
 
 Options:
   -i <pattern> : Pattern (glob) to INCLUDE files/folders (default: '*' if no -i is provided).
@@ -146,11 +150,17 @@ Options:
   -f <pattern> : Pattern (glob) to FORCE INCLUDE files/folders, bypassing file type and size checks.
                  Can be used multiple times (e.g., -f 'assets/*.bin' -f 'data/*.dat').
   -q "question" : Specifies the question for the LLM.
+  -c            : Use clipboard content as the question for the LLM.
+  -qf <file>    : Path to a file containing the question for the LLM.
   -h            : Displays this help message.
+
+Note: If multiple question input methods (-q, -c, -qf) are provided, the last one in the command line takes precedence.
 
 Examples:
   make-project-prompt -i 'src/**/*.js' -e '**/__tests__/*' -q "Refactor this React code to use Hooks."
-  make-project-prompt -i '*.go' -f 'assets/*.bin' -q "How can I optimize this binary asset loading?"
+  make-project-prompt -i '*.go' -f 'assets/*.bin' -c
+  make-project-prompt -i '*.py' -qf question.txt  # Read question from file
+  make-project-prompt -i '*.py' -q "Initial question" -c  # Clipboard content will be used (last option wins)
 ```
 
 ## Usage Examples
@@ -169,6 +179,15 @@ mpp -i 'src/*' -i 'include/*' -e '*_test.go' -q "Check if there are any concurre
 
 # Generate a prompt, include Go files and force include binary files in the assets directory
 mpp -i '*.go' -f 'assets/**/*.bin' -q "How can I optimize loading these binary assets in my Go application?"
+
+# Generate a prompt using the question from your clipboard
+mpp -c
+
+# Generate a prompt using a question from a file
+mpp -i '*.go' -qf path/to/question.txt
+
+# Generate a prompt with multiple question input methods (clipboard content will be used)
+mpp -q "This question will be overridden" -c
 ```
 
 ## Development
@@ -179,6 +198,25 @@ If you want to contribute or modify the code:
 2.  Enter the directory: `cd make-project-prompt`
 3.  Make your changes to the Go code
 4.  Build and test: `go build` and `./make-project-prompt`
+
+### Testing
+
+The project includes comprehensive tests for all functionalities. To run the tests:
+
+```bash
+go test -v ./...
+```
+
+This will run all tests in the project, including:
+- File filtering and pattern matching
+- Text file detection
+- Project tree generation
+- Prompt generation
+- Question input methods (command-line, clipboard, file)
+
+The project also includes a GitHub Actions workflow that automatically runs tests on push and pull requests. This ensures that all changes are tested before being merged.
+
+### Development Environment
 
 For Nix users, you can start a Nix development shell:
 

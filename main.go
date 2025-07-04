@@ -21,6 +21,7 @@ var (
 	forceIncludePatterns multiStringFlag
 	question            string
 	useClipboard        bool
+	questionFile        string
 	showHelp            bool
 )
 
@@ -42,16 +43,21 @@ func init() {
 	flag.Var(&excludePatterns, "e", "Pattern (glob) to EXCLUDE files/folders. Can be used multiple times.")
 	flag.Var(&forceIncludePatterns, "f", "Pattern (glob) to FORCE INCLUDE files/folders, bypassing file type and size checks. Can be used multiple times.")
 	flag.StringVar(&question, "q", "[YOUR QUESTION HERE]", "Specifies the question for the LLM.")
+	flag.BoolVar(&useClipboard, "c", false, "Use clipboard content as the question for the LLM.")
+	flag.StringVar(&questionFile, "qf", "", "Path to a file containing the question for the LLM.")
 	flag.BoolVar(&showHelp, "h", false, "Displays help message.")
 
 	// Override usage message
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [-i <include_pattern>] [-e <exclude_pattern>] [-f <force_include_pattern>] [-q \"question\"] [-h]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [-i <include_pattern>] [-e <exclude_pattern>] [-f <force_include_pattern>] [-q \"question\"] [-c] [-qf file] [-h]\n\n", os.Args[0])
 		fmt.Fprintln(os.Stderr, "Options:")
 		flag.PrintDefaults()
+		fmt.Fprintln(os.Stderr, "\nNote: If multiple question input methods (-q, -c, -qf) are provided, the last one in the command line takes precedence.")
 		fmt.Fprintln(os.Stderr, "\nExamples:")
 		fmt.Fprintln(os.Stderr, "  make-project-prompt -i 'src/**/*.js' -e '**/__tests__/*' -q \"Refactor this React code to use Hooks.\"")
-		fmt.Fprintln(os.Stderr, "  make-project-prompt -i '*.go' -f 'assets/*.bin' -q \"How can I optimize this binary asset loading?\"")
+		fmt.Fprintln(os.Stderr, "  make-project-prompt -i '*.go' -f 'assets/*.bin' -c")
+		fmt.Fprintln(os.Stderr, "  make-project-prompt -i '*.py' -qf question.txt  # Read question from file")
+		fmt.Fprintln(os.Stderr, "  make-project-prompt -i '*.py' -q \"Initial question\" -c  # Clipboard content will be used (last option wins)")
 	}
 }
 
@@ -141,6 +147,10 @@ func checkDependencies() error {
 }
 
 func main() {
+	// Store original args before parsing to determine flag order later
+	originalArgs := make([]string, len(os.Args))
+	copy(originalArgs, os.Args)
+
 	// Parse command-line flags
 	flag.Parse()
 
@@ -155,6 +165,72 @@ func main() {
 	// Check dependencies
 	if err := checkDependencies(); err != nil {
 		log.Fatalf("Error: %v", err)
+	}
+
+	// Handle question input strategy (last one wins)
+	// Determine which flag was provided last by analyzing original args
+	lastQIndex := -1
+	lastCIndex := -1
+	lastQFIndex := -1
+
+	for i, arg := range originalArgs {
+		if arg == "-q" || arg == "--q" {
+			lastQIndex = i
+		} else if arg == "-c" || arg == "--c" {
+			lastCIndex = i
+		} else if arg == "-qf" || arg == "--qf" {
+			lastQFIndex = i
+		}
+	}
+
+	// Use the last provided method
+	if lastQFIndex > lastQIndex && lastQFIndex > lastCIndex && questionFile != "" {
+		// Read from file (it was the last option)
+		fileContent, err := os.ReadFile(questionFile)
+		if err != nil {
+			log.Fatalf("Error reading from file %s: %v\nMake sure the file exists and is readable.", questionFile, err)
+		}
+		if len(fileContent) == 0 {
+			log.Fatalf("Error: File %s is empty. Please provide a file with content.", questionFile)
+		}
+		question = string(fileContent)
+		fmt.Printf("Using question from file %s (last option wins).\n", questionFile)
+	} else if lastCIndex > lastQIndex && lastCIndex > lastQFIndex && useClipboard {
+		// Read from clipboard (it was the last option)
+		clipContent, err := clipboard.ReadAll()
+		if err != nil {
+			log.Fatalf("Error reading from clipboard: %v\nMake sure you have content in your clipboard.", err)
+		}
+		if clipContent == "" {
+			log.Fatalf("Error: Clipboard is empty. Please copy your question to the clipboard first.")
+		}
+		question = clipContent
+		fmt.Println("Using question from clipboard (last option wins).")
+	} else if lastQIndex > lastCIndex && lastQIndex > lastQFIndex && question != "[YOUR QUESTION HERE]" {
+		// Using question from -q flag (it was the last option)
+		fmt.Println("Using question from command line (last option wins).")
+	} else if questionFile != "" {
+		// Only file flag was provided
+		fileContent, err := os.ReadFile(questionFile)
+		if err != nil {
+			log.Fatalf("Error reading from file %s: %v\nMake sure the file exists and is readable.", questionFile, err)
+		}
+		if len(fileContent) == 0 {
+			log.Fatalf("Error: File %s is empty. Please provide a file with content.", questionFile)
+		}
+		question = string(fileContent)
+		fmt.Printf("Using question from file %s.\n", questionFile)
+	} else if useClipboard {
+		// Only clipboard flag was provided
+		clipContent, err := clipboard.ReadAll()
+		if err != nil {
+			log.Fatalf("Error reading from clipboard: %v\nMake sure you have content in your clipboard.", err)
+		}
+		if clipContent == "" {
+			log.Fatalf("Error: Clipboard is empty. Please copy your question to the clipboard first.")
+		}
+		question = clipContent
+		fmt.Println("Using question from clipboard.")
 	}
 
 	// Display options
