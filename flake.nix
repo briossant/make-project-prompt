@@ -27,7 +27,7 @@
           src = ./.;
 
           # Use the computed hash for the vendor directory
-          vendorHash = "sha256-ewCKket3ARSY+AQLjWRdauEl5fMdamNXWCk3WMRjgBk=";
+          vendorHash = "sha256-ktC3H2O94piZJss0si600Dr2CiPGCZi0PLDVthX0fv0=";
 
           nativeBuildInputs = [ pkgs.makeWrapper ];
 
