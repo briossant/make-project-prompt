@@ -13,6 +13,7 @@ This allows you to provide rich and precise context to the LLM for questions reg
 *   **Respects `.gitignore`:** Uses `git ls-files` to list files, automatically ignoring those specified in your `.gitignore` and other standard Git ignore mechanisms.
 *   **Advanced Filtering:**
     *   Selectively includes/excludes files/folders using glob patterns (`-i` and `-e` options).
+    *   Force include files/folders regardless of type or size (`-f` option).
     *   Automatically excludes binary files (based on MIME type).
     *   Excludes common directories like `.git`, `node_modules`, etc. from the `tree` output for clarity.
 *   **Easy Integration:** Copies the generated prompt directly to the clipboard.
@@ -135,17 +136,21 @@ After rebuilding (`nixos-rebuild switch` or `home-manager switch`), the commands
 ## Command Options
 
 ```bash
-Usage: make-project-prompt [-i <include_pattern>] [-e <exclude_pattern>] [-q "question"] [-h]
+Usage: make-project-prompt [-i <include_pattern>] [-e <exclude_pattern>] [-f <force_include_pattern>] [-q "question"] [-h]
 
 Options:
   -i <pattern> : Pattern (glob) to INCLUDE files/folders (default: '*' if no -i is provided).
                  Can be used multiple times (e.g., -i 'src/*' -i '*.py').
   -e <pattern> : Pattern (glob) to EXCLUDE files/folders (e.g., -e '*.log' -e 'tests/data/*').
                  Can be used multiple times.
+  -f <pattern> : Pattern (glob) to FORCE INCLUDE files/folders, bypassing file type and size checks.
+                 Can be used multiple times (e.g., -f 'assets/*.bin' -f 'data/*.dat').
   -q "question" : Specifies the question for the LLM.
   -h            : Displays this help message.
 
-Example: make-project-prompt -i 'src/**/*.js' -e '**/__tests__/*' -q "Refactor this React code to use Hooks."
+Examples:
+  make-project-prompt -i 'src/**/*.js' -e '**/__tests__/*' -q "Refactor this React code to use Hooks."
+  make-project-prompt -i '*.go' -f 'assets/*.bin' -q "How can I optimize this binary asset loading?"
 ```
 
 ## Usage Examples
@@ -161,6 +166,9 @@ mpp -i '*.py' -q "Explain the role of the main class in this Python project."
 
 # Generate a prompt, include files in 'src' and 'include', exclude test files
 mpp -i 'src/*' -i 'include/*' -e '*_test.go' -q "Check if there are any concurrency issues in this Go code."
+
+# Generate a prompt, include Go files and force include binary files in the assets directory
+mpp -i '*.go' -f 'assets/**/*.bin' -q "How can I optimize loading these binary assets in my Go application?"
 ```
 
 ## Development

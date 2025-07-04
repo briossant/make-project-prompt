@@ -47,7 +47,7 @@
             '';
             homepage = "https://github.com/briossant/make-project-prompt";
             license = licenses.mit;
-            maintainers = with maintainers; [ "briossant" ];
+            maintainers = with maintainers; [ "brieuc crosson" ];
             platforms = platforms.all;
             mainProgram = "make-project-prompt";
           };
