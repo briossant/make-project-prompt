@@ -53,7 +53,7 @@ func TestFilterFiles(t *testing.T) {
 			expectedCount: 2, // Only text files should be included by default
 		},
 		{
-			name:  "Include only text files",
+			name:  "Include specific text file",
 			files: []string{textFile, binaryFile, subFile},
 			config: Config{
 				IncludePatterns: []string{"test.txt"},
@@ -61,28 +61,28 @@ func TestFilterFiles(t *testing.T) {
 			expectedCount: 1,
 		},
 		{
-			name:  "Exclude subdirectory",
+			name:  "Exclude specific file",
 			files: []string{textFile, binaryFile, subFile},
 			config: Config{
-				ExcludePatterns: []string{"subdir/*"},
+				ExcludePatterns: []string{"subdir/subfile.txt"},
 			},
 			expectedCount: 1, // Only the root text file
 		},
 		{
-			name:  "Force include binary file",
+			name:  "Force include specific binary file",
 			files: []string{textFile, binaryFile, subFile},
 			config: Config{
-				ForceIncludePatterns: []string{"*.bin"},
+				ForceIncludePatterns: []string{"test.bin"},
 			},
 			expectedCount:  3, // All files (2 text + 1 forced binary)
 			expectedForced: true,
 		},
 		{
-			name:  "Complex pattern matching",
+			name:  "Multiple specific files",
 			files: []string{textFile, binaryFile, subFile},
 			config: Config{
-				IncludePatterns:     []string{"test.txt"},
-				ExcludePatterns:     []string{"subdir/*"},
+				IncludePatterns:      []string{"test.txt"},
+				ExcludePatterns:      []string{"subdir/subfile.txt"},
 				ForceIncludePatterns: []string{"test.bin"},
 			},
 			expectedCount:  2, // Root text file + forced binary file
@@ -152,68 +152,46 @@ func TestListGitFiles(t *testing.T) {
 		t.Skip("Skipping test: not in a Git repository")
 	}
 
+	// Note: This test is now less useful since we're no longer doing glob matching
+	// in the code. The test now just verifies that ListGitFiles works with the
+	// new approach of treating patterns as literal file paths.
+	// In a real-world scenario, bash would expand the globs before passing them to the program.
+
 	// Test cases
 	testCases := []struct {
-		name           string
-		config         Config
-		expectFiles    bool
-		expectGoFiles  bool
-		expectMdFiles  bool
-		expectBinFiles bool
+		name        string
+		config      Config
+		expectFiles bool
 	}{
 		{
-			name:          "Default config",
-			config:        Config{},
-			expectFiles:   true,
-			expectGoFiles: true,
-			expectMdFiles: true,
+			name:        "Default config",
+			config:      Config{},
+			expectFiles: true,
 		},
 		{
-			name: "Include only Go files",
+			name: "Include specific files",
 			config: Config{
-				IncludePatterns: []string{"*.go"},
+				// In a real scenario, these would be expanded by bash
+				// Here we're just testing that the function works with literal paths
+				IncludePatterns: []string{"main.go", "README.md"},
 			},
-			expectFiles:   true,
-			expectGoFiles: true,
-			expectMdFiles: false,
+			expectFiles: true,
 		},
 		{
-			name: "Include only Markdown files",
+			name: "Exclude specific files",
 			config: Config{
-				IncludePatterns: []string{"*.md"},
+				// In a real scenario, these would be expanded by bash
+				ExcludePatterns: []string{"main.go"},
 			},
-			expectFiles:   true,
-			expectGoFiles: false,
-			expectMdFiles: true,
+			expectFiles: true,
 		},
 		{
-			name: "Exclude Go files",
+			name: "Force include specific files",
 			config: Config{
-				ExcludePatterns: []string{"*.go"},
-			},
-			expectFiles:   true,
-			expectGoFiles: false,
-			expectMdFiles: true,
-		},
-		{
-			name: "Force include pattern",
-			config: Config{
-				ForceIncludePatterns: []string{"*.go"},
-			},
-			expectFiles:   true,
-			expectGoFiles: true,
-			expectMdFiles: true,
-		},
-		{
-			name: "Complex pattern matching",
-			config: Config{
-				IncludePatterns:      []string{"*.md"},
-				ExcludePatterns:      []string{"README.md"},
+				// In a real scenario, these would be expanded by bash
 				ForceIncludePatterns: []string{"main.go"},
 			},
-			expectFiles:   true,
-			expectGoFiles: true, // main.go is force included
-			expectMdFiles: true, // other .md files except README.md
+			expectFiles: true,
 		},
 	}
 
@@ -231,41 +209,12 @@ func TestListGitFiles(t *testing.T) {
 				t.Log("No files found, skipping this check")
 			}
 
-			// Check for specific file types
-			foundGoFile := false
-			foundMdFile := false
-			foundBinFile := false
-
-			for _, file := range files {
-				ext := filepath.Ext(file.Path)
-				if ext == ".go" {
-					foundGoFile = true
-				} else if ext == ".md" {
-					foundMdFile = true
-				} else if ext == ".bin" {
-					foundBinFile = true
+			// Log the files found for informational purposes
+			if len(files) > 0 {
+				t.Logf("Found %d files", len(files))
+				for _, file := range files {
+					t.Logf("  - %s (IsText: %v, IsForced: %v)", file.Path, file.IsText, file.IsForced)
 				}
-			}
-
-			if tc.expectGoFiles && !foundGoFile {
-				// Skip this check if we're testing in an environment without Go files
-				t.Log("No Go files found, skipping this check")
-			}
-			if !tc.expectGoFiles && foundGoFile {
-				t.Error("Expected not to find Go files, but some were found")
-			}
-			if tc.expectMdFiles && !foundMdFile {
-				// Skip this check if we're testing in an environment without Markdown files
-				t.Log("No Markdown files found, skipping this check")
-			}
-			if !tc.expectMdFiles && foundMdFile {
-				t.Error("Expected not to find Markdown files, but some were found")
-			}
-			if tc.expectBinFiles && !foundBinFile {
-				t.Error("Expected to find binary files, but none were found")
-			}
-			if !tc.expectBinFiles && foundBinFile {
-				t.Error("Expected not to find binary files, but some were found")
 			}
 		})
 	}

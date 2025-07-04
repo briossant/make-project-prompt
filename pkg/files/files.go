@@ -10,8 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"github.com/gobwas/glob"
 )
 
 // FileInfo represents information about a file
@@ -25,8 +23,8 @@ type FileInfo struct {
 
 // Config holds configuration for file operations
 type Config struct {
-	IncludePatterns     []string
-	ExcludePatterns     []string
+	IncludePatterns      []string
+	ExcludePatterns      []string
 	ForceIncludePatterns []string
 }
 
@@ -34,6 +32,12 @@ type Config struct {
 func ListGitFiles(config Config) ([]FileInfo, error) {
 	// Build git ls-files command
 	args := []string{"ls-files", "-co", "--exclude-standard"}
+
+	// If we have force include patterns, also include ignored files
+	if len(config.ForceIncludePatterns) > 0 {
+		// Add the --ignored flag to include files that are in .gitignore
+		args = append(args, "--ignored")
+	}
 
 	// Add -- separator and include patterns
 	args = append(args, "--")
@@ -71,43 +75,39 @@ func ListGitFiles(config Config) ([]FileInfo, error) {
 }
 
 // filterFiles applies include, exclude, and force include patterns to the file list
+// Note: The patterns are now treated as literal file paths, not glob patterns
+// as bash is expected to expand the globs before passing them to the program
 func filterFiles(files []string, config Config) ([]FileInfo, error) {
 	var result []FileInfo
 
-	// Compile glob patterns for better performance
-	includeGlobs, err := compileGlobs(config.IncludePatterns)
-	if err != nil {
-		return nil, fmt.Errorf("invalid include pattern: %w", err)
+	// Convert patterns to maps for O(1) lookup
+	includePatterns := make(map[string]bool)
+	for _, pattern := range config.IncludePatterns {
+		includePatterns[pattern] = true
 	}
 
-	excludeGlobs, err := compileGlobs(config.ExcludePatterns)
-	if err != nil {
-		return nil, fmt.Errorf("invalid exclude pattern: %w", err)
+	excludePatterns := make(map[string]bool)
+	for _, pattern := range config.ExcludePatterns {
+		excludePatterns[pattern] = true
 	}
 
-	forceIncludeGlobs, err := compileGlobs(config.ForceIncludePatterns)
-	if err != nil {
-		return nil, fmt.Errorf("invalid force include pattern: %w", err)
+	forceIncludePatterns := make(map[string]bool)
+	for _, pattern := range config.ForceIncludePatterns {
+		forceIncludePatterns[pattern] = true
 	}
 
 	for _, file := range files {
 		// Check if file should be included
-		included := len(includeGlobs) == 0 // If no include patterns, include all files
-		for _, g := range includeGlobs {
-			if g.Match(file) {
-				included = true
-				break
-			}
+		included := len(includePatterns) == 0 // If no include patterns, include all files
+		if includePatterns[file] {
+			included = true
 		}
 
 		// Check if file should be force included
 		forced := false
-		for _, g := range forceIncludeGlobs {
-			if g.Match(file) {
-				included = true
-				forced = true
-				break
-			}
+		if forceIncludePatterns[file] {
+			included = true
+			forced = true
 		}
 
 		// If not included or forced, skip this file
@@ -116,13 +116,7 @@ func filterFiles(files []string, config Config) ([]FileInfo, error) {
 		}
 
 		// Check if file should be excluded
-		excluded := false
-		for _, g := range excludeGlobs {
-			if g.Match(file) {
-				excluded = true
-				break
-			}
-		}
+		excluded := excludePatterns[file]
 
 		// If excluded, skip this file
 		if excluded {
@@ -163,19 +157,6 @@ func filterFiles(files []string, config Config) ([]FileInfo, error) {
 	return result, nil
 }
 
-// compileGlobs compiles a list of glob patterns for efficient matching
-func compileGlobs(patterns []string) ([]glob.Glob, error) {
-	var globs []glob.Glob
-	for _, pattern := range patterns {
-		g, err := glob.Compile(pattern)
-		if err != nil {
-			return nil, fmt.Errorf("invalid pattern '%s': %w", pattern, err)
-		}
-		globs = append(globs, g)
-	}
-	return globs, nil
-}
-
 // IsTextFile checks if a file is a text file based on its MIME type
 func IsTextFile(filePath string) bool {
 	// Special case for Go module files
@@ -204,10 +185,10 @@ func IsTextFile(filePath string) bool {
 		} else {
 			// If 'file' command is not available, make a best guess based on extension
 			knownTextExtensions := map[string]bool{
-				".txt": true, ".md": true, ".go": true, ".py": true, ".js": true, 
-				".html": true, ".css": true, ".json": true, ".xml": true, ".yaml": true, 
-				".yml": true, ".toml": true, ".sh": true, ".bash": true, ".c": true, 
-				".cpp": true, ".h": true, ".hpp": true, ".java": true, ".rb": true, 
+				".txt": true, ".md": true, ".go": true, ".py": true, ".js": true,
+				".html": true, ".css": true, ".json": true, ".xml": true, ".yaml": true,
+				".yml": true, ".toml": true, ".sh": true, ".bash": true, ".c": true,
+				".cpp": true, ".h": true, ".hpp": true, ".java": true, ".rb": true,
 				".php": true, ".ts": true, ".jsx": true, ".tsx": true, ".vue": true,
 				".rs": true, ".swift": true, ".kt": true, ".scala": true, ".clj": true,
 				".ex": true, ".exs": true, ".erl": true, ".hs": true, ".lua": true,

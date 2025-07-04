@@ -38,9 +38,9 @@ func (m *multiStringFlag) Set(value string) error {
 
 // Initialize flags
 func init() {
-	flag.Var(&includePatterns, "i", "Pattern (glob) to INCLUDE files/folders. Can be used multiple times.")
-	flag.Var(&excludePatterns, "e", "Pattern (glob) to EXCLUDE files/folders. Can be used multiple times.")
-	flag.Var(&forceIncludePatterns, "f", "Pattern (glob) to FORCE INCLUDE files/folders, bypassing file type and size checks. Can be used multiple times.")
+	flag.Var(&includePatterns, "i", "File path to INCLUDE. Glob patterns are expanded by your shell before being passed to this program. Can be used multiple times.")
+	flag.Var(&excludePatterns, "e", "File path to EXCLUDE. Glob patterns are expanded by your shell before being passed to this program. Can be used multiple times.")
+	flag.Var(&forceIncludePatterns, "f", "File path to FORCE INCLUDE, bypassing file type and size checks. Glob patterns are expanded by your shell before being passed to this program. Can be used multiple times.")
 	flag.StringVar(&question, "q", "[YOUR QUESTION HERE]", "Specifies the question for the LLM.")
 	flag.BoolVar(&useClipboard, "c", false, "Use clipboard content as the question for the LLM.")
 	flag.StringVar(&questionFile, "qf", "", "Path to a file containing the question for the LLM.")
@@ -48,15 +48,16 @@ func init() {
 
 	// Override usage message
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [-i <include_pattern>] [-e <exclude_pattern>] [-f <force_include_pattern>] [-q \"question\"] [-c] [-qf file] [-h]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [-i <file_path>] [-e <file_path>] [-f <file_path>] [-q \"question\"] [-c] [-qf file] [-h]\n\n", os.Args[0])
 		fmt.Fprintln(os.Stderr, "Options:")
 		flag.PrintDefaults()
 		fmt.Fprintln(os.Stderr, "\nNote: If multiple question input methods (-q, -c, -qf) are provided, the last one in the command line takes precedence.")
-		fmt.Fprintln(os.Stderr, "\nExamples:")
-		fmt.Fprintln(os.Stderr, "  make-project-prompt -i 'src/**/*.js' -e '**/__tests__/*' -q \"Refactor this React code to use Hooks.\"")
-		fmt.Fprintln(os.Stderr, "  make-project-prompt -i '*.go' -f 'assets/*.bin' -c")
-		fmt.Fprintln(os.Stderr, "  make-project-prompt -i '*.py' -qf question.txt  # Read question from file")
-		fmt.Fprintln(os.Stderr, "  make-project-prompt -i '*.py' -q \"Initial question\" -c  # Clipboard content will be used (last option wins)")
+		fmt.Fprintln(os.Stderr, "\nExamples (with shell glob expansion):")
+		fmt.Fprintln(os.Stderr, "  make-project-prompt -i src/**/*.js -e **/__tests__/* -q \"Refactor this React code to use Hooks.\"")
+		fmt.Fprintln(os.Stderr, "  make-project-prompt -i *.go -f assets/*.bin -c")
+		fmt.Fprintln(os.Stderr, "  make-project-prompt -i *.py -qf question.txt  # Read question from file")
+		fmt.Fprintln(os.Stderr, "  make-project-prompt -i *.py -q \"Initial question\" -c  # Clipboard content will be used (last option wins)")
+		fmt.Fprintln(os.Stderr, "\nNote: Glob patterns (like *.go) are expanded by your shell before being passed to this program.")
 	}
 }
 
@@ -107,6 +108,65 @@ func processFilesAndGeneratePrompt() (string, int, error) {
 	return promptText, fileCount, nil
 }
 
+// customParseArgs parses command-line arguments, collecting all arguments until a new flag is encountered
+func customParseArgs() {
+	args := os.Args[1:] // Skip the program name
+
+	// Define a helper function to check if an argument is a flag
+	isFlag := func(arg string) bool {
+		return strings.HasPrefix(arg, "-")
+	}
+
+	var currentFlag string
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		// Check if this is a flag
+		if isFlag(arg) {
+			// Process the flag
+			currentFlag = arg
+
+			// Handle boolean flags (like -h, -c)
+			if currentFlag == "-h" || currentFlag == "--h" {
+				showHelp = true
+				continue
+			} else if currentFlag == "-c" || currentFlag == "--c" {
+				useClipboard = true
+				continue
+			}
+
+			// For flags that take a value, get the next argument
+			if i+1 < len(args) && !isFlag(args[i+1]) {
+				value := args[i+1]
+				i++ // Skip the value in the next iteration
+
+				// Process the flag and its value
+				if currentFlag == "-q" || currentFlag == "--q" {
+					question = value
+				} else if currentFlag == "-qf" || currentFlag == "--qf" {
+					questionFile = value
+				} else if currentFlag == "-i" || currentFlag == "--i" {
+					includePatterns = append(includePatterns, value)
+				} else if currentFlag == "-e" || currentFlag == "--e" {
+					excludePatterns = append(excludePatterns, value)
+				} else if currentFlag == "-f" || currentFlag == "--f" {
+					forceIncludePatterns = append(forceIncludePatterns, value)
+				}
+			}
+		} else if currentFlag == "-i" || currentFlag == "--i" {
+			// This is a non-flag argument following -i, add it to includePatterns
+			includePatterns = append(includePatterns, arg)
+		} else if currentFlag == "-e" || currentFlag == "--e" {
+			// This is a non-flag argument following -e, add it to excludePatterns
+			excludePatterns = append(excludePatterns, arg)
+		} else if currentFlag == "-f" || currentFlag == "--f" {
+			// This is a non-flag argument following -f, add it to forceIncludePatterns
+			forceIncludePatterns = append(forceIncludePatterns, arg)
+		}
+	}
+}
+
 // checkDependencies checks if all required dependencies are available
 func checkDependencies() error {
 	// Check if inside a Git repository
@@ -150,8 +210,8 @@ func main() {
 	originalArgs := make([]string, len(os.Args))
 	copy(originalArgs, os.Args)
 
-	// Parse command-line flags
-	flag.Parse()
+	// Custom argument parsing to handle multiple arguments per flag
+	customParseArgs()
 
 	// Show help if requested
 	if showHelp {

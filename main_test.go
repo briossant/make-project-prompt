@@ -87,24 +87,38 @@ func TestListGitFiles(t *testing.T) {
 		t.Error("files.ListGitFiles returned no files, expected at least some files")
 	}
 
-	// Test with a specific include pattern that should match at least one file
+	// Find a specific .go file to use in the test
+	// This simulates what would happen if bash expanded the glob pattern
+	var goFilePath string
+	for _, fileInfo := range fileInfos {
+		if filepath.Ext(fileInfo.Path) == ".go" {
+			goFilePath = fileInfo.Path
+			break
+		}
+	}
+
+	if goFilePath == "" {
+		t.Skip("Skipping test: no .go files found in the repository")
+	}
+
+	// Test with a specific file path (simulating bash expansion of *.go)
 	config = files.Config{
-		IncludePatterns: []string{"*.go"},
+		IncludePatterns: []string{goFilePath},
 	}
 	fileInfos, err = files.ListGitFiles(config)
 	if err != nil {
-		t.Fatalf("files.ListGitFiles with include pattern failed: %v", err)
+		t.Fatalf("files.ListGitFiles with specific file path failed: %v", err)
 	}
 
-	// Verify that at least one .go file was found
+	// Verify that the specific .go file was found
 	if len(fileInfos) == 0 {
-		t.Error("files.ListGitFiles with '*.go' pattern returned no files, expected at least one")
+		t.Errorf("files.ListGitFiles with '%s' path returned no files, expected at least one", goFilePath)
 	}
 
-	// Verify that all files have .go extension
+	// Verify that the file has .go extension
 	for _, fileInfo := range fileInfos {
 		if filepath.Ext(fileInfo.Path) != ".go" {
-			t.Errorf("files.ListGitFiles with '*.go' pattern returned a non-go file: %s", fileInfo.Path)
+			t.Errorf("files.ListGitFiles with '%s' path returned a non-go file: %s", goFilePath, fileInfo.Path)
 		}
 	}
 }
@@ -126,52 +140,52 @@ func TestQuestionInputMethods(t *testing.T) {
 
 	// Test cases for determining which flag was provided last
 	testCases := []struct {
-		name           string
-		args           []string
-		expectedQIndex int
-		expectedCIndex int
+		name            string
+		args            []string
+		expectedQIndex  int
+		expectedCIndex  int
 		expectedQFIndex int
 	}{
 		{
-			name:           "Only -q flag",
-			args:           []string{"program", "-q", "question"},
-			expectedQIndex: 1,
-			expectedCIndex: -1,
+			name:            "Only -q flag",
+			args:            []string{"program", "-q", "question"},
+			expectedQIndex:  1,
+			expectedCIndex:  -1,
 			expectedQFIndex: -1,
 		},
 		{
-			name:           "Only -c flag",
-			args:           []string{"program", "-c"},
-			expectedQIndex: -1,
-			expectedCIndex: 1,
+			name:            "Only -c flag",
+			args:            []string{"program", "-c"},
+			expectedQIndex:  -1,
+			expectedCIndex:  1,
 			expectedQFIndex: -1,
 		},
 		{
-			name:           "Only -qf flag",
-			args:           []string{"program", "-qf", "file.txt"},
-			expectedQIndex: -1,
-			expectedCIndex: -1,
+			name:            "Only -qf flag",
+			args:            []string{"program", "-qf", "file.txt"},
+			expectedQIndex:  -1,
+			expectedCIndex:  -1,
 			expectedQFIndex: 1,
 		},
 		{
-			name:           "Multiple flags, -q last",
-			args:           []string{"program", "-c", "-qf", "file.txt", "-q", "question"},
-			expectedQIndex: 4,
-			expectedCIndex: 1,
+			name:            "Multiple flags, -q last",
+			args:            []string{"program", "-c", "-qf", "file.txt", "-q", "question"},
+			expectedQIndex:  4,
+			expectedCIndex:  1,
 			expectedQFIndex: 2,
 		},
 		{
-			name:           "Multiple flags, -c last",
-			args:           []string{"program", "-q", "question", "-qf", "file.txt", "-c"},
-			expectedQIndex: 1,
-			expectedCIndex: 5,
+			name:            "Multiple flags, -c last",
+			args:            []string{"program", "-q", "question", "-qf", "file.txt", "-c"},
+			expectedQIndex:  1,
+			expectedCIndex:  5,
 			expectedQFIndex: 3,
 		},
 		{
-			name:           "Multiple flags, -qf last",
-			args:           []string{"program", "-q", "question", "-c", "-qf", "file.txt"},
-			expectedQIndex: 1,
-			expectedCIndex: 3,
+			name:            "Multiple flags, -qf last",
+			args:            []string{"program", "-q", "question", "-c", "-qf", "file.txt"},
+			expectedQIndex:  1,
+			expectedCIndex:  3,
 			expectedQFIndex: 4,
 		},
 	}
