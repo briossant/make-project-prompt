@@ -11,7 +11,6 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/briossant/make-project-prompt/pkg/files"
 	"github.com/briossant/make-project-prompt/pkg/prompt"
-	"github.com/gobwas/glob"
 )
 
 // Command-line flags

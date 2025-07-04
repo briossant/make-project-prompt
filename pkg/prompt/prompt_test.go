@@ -35,6 +35,12 @@ func TestGenerator_Generate(t *testing.T) {
 		t.Fatalf("Failed to create large file: %v", err)
 	}
 
+	// Create a forced included large file
+	forcedLargeFile := filepath.Join(tempDir, "large.txt.forced")
+	if err := os.WriteFile(forcedLargeFile, []byte(largeContent), 0644); err != nil {
+		t.Fatalf("Failed to create forced large file: %v", err)
+	}
+
 	// Create file info objects
 	fileInfos := []files.FileInfo{
 		{
@@ -59,7 +65,7 @@ func TestGenerator_Generate(t *testing.T) {
 			IsRegular: true,
 		},
 		{
-			Path:      largeFile + ".forced",
+			Path:      forcedLargeFile,
 			IsText:    true,
 			IsForced:  true, // Force include this large file
 			Size:      int64(len(largeContent)),
@@ -79,14 +85,14 @@ func TestGenerator_Generate(t *testing.T) {
 			name:           "Default max file size",
 			question:       "Test question",
 			maxFileSize:    0, // Use default
-			expectedFiles:  2, // Only the two small files
+			expectedFiles:  3, // Two small files + forced large file
 			expectedPhrase: "Test question",
 		},
 		{
 			name:           "Custom max file size",
 			question:       "Another question",
 			maxFileSize:    int64(len(largeContent) + 1),
-			expectedFiles:  3, // All three files (including large file)
+			expectedFiles:  4, // All four files (including large file and forced large file)
 			expectedPhrase: "Another question",
 		},
 		{
@@ -102,7 +108,7 @@ func TestGenerator_Generate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create generator
 			generator := NewGenerator(fileInfos, tc.question)
-			
+
 			// Set custom max file size if specified
 			if tc.maxFileSize > 0 {
 				generator.SetMaxFileSize(tc.maxFileSize)

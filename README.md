@@ -207,6 +207,12 @@ The project includes comprehensive tests for all functionalities. To run the tes
 go test -v ./...
 ```
 
+For Nix users, you can also run the tests using the flake output:
+
+```bash
+nix run .#test
+```
+
 This will run all tests in the project, including:
 - File filtering and pattern matching
 - Text file detection

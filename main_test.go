@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/briossant/make-project-prompt/pkg/files"
 )
 
 func TestIsTextFile(t *testing.T) {
@@ -57,10 +59,10 @@ func TestIsTextFile(t *testing.T) {
 				t.Fatalf("Failed to create test file: %v", err)
 			}
 
-			// Test the isTextFile function
-			result := isTextFile(filePath)
+			// Test the IsTextFile function
+			result := files.IsTextFile(filePath)
 			if result != tc.expected {
-				t.Errorf("isTextFile(%q) = %v, want %v", filePath, result, tc.expected)
+				t.Errorf("files.IsTextFile(%q) = %v, want %v", filePath, result, tc.expected)
 			}
 		})
 	}
@@ -73,32 +75,36 @@ func TestListGitFiles(t *testing.T) {
 		t.Skip("Skipping test: not in a Git repository")
 	}
 
-	// Test with default include pattern
-	files, err := listGitFiles([]string{}, []string{})
+	// Test with default config
+	config := files.Config{}
+	fileInfos, err := files.ListGitFiles(config)
 	if err != nil {
-		t.Fatalf("listGitFiles failed: %v", err)
+		t.Fatalf("files.ListGitFiles failed: %v", err)
 	}
 
 	// Verify that at least some files were found
-	if len(files) == 0 {
-		t.Error("listGitFiles returned no files, expected at least some files")
+	if len(fileInfos) == 0 {
+		t.Error("files.ListGitFiles returned no files, expected at least some files")
 	}
 
 	// Test with a specific include pattern that should match at least one file
-	files, err = listGitFiles([]string{"*.go"}, []string{})
+	config = files.Config{
+		IncludePatterns: []string{"*.go"},
+	}
+	fileInfos, err = files.ListGitFiles(config)
 	if err != nil {
-		t.Fatalf("listGitFiles with include pattern failed: %v", err)
+		t.Fatalf("files.ListGitFiles with include pattern failed: %v", err)
 	}
 
 	// Verify that at least one .go file was found
-	if len(files) == 0 {
-		t.Error("listGitFiles with '*.go' pattern returned no files, expected at least one")
+	if len(fileInfos) == 0 {
+		t.Error("files.ListGitFiles with '*.go' pattern returned no files, expected at least one")
 	}
 
 	// Verify that all files have .go extension
-	for _, file := range files {
-		if filepath.Ext(file) != ".go" {
-			t.Errorf("listGitFiles with '*.go' pattern returned a non-go file: %s", file)
+	for _, fileInfo := range fileInfos {
+		if filepath.Ext(fileInfo.Path) != ".go" {
+			t.Errorf("files.ListGitFiles with '*.go' pattern returned a non-go file: %s", fileInfo.Path)
 		}
 	}
 }

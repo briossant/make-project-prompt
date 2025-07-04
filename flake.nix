@@ -66,6 +66,13 @@
           type = "app";
           program = "${makeProjectPromptPackage}/bin/mpp";
         };
+        apps.test = {
+          type = "app";
+          program = toString (pkgs.writeShellScript "run-tests" ''
+            cd ${self}
+            ${pkgs.go}/bin/go test ./... -v
+          '');
+        };
 
         apps.default = self.apps.${system}.${pname};
 
