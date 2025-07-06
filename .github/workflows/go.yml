@@ -27,8 +27,17 @@ jobs:
     - name: Get dependencies
       run: go get -v -t -d ./...
 
-    - name: Run tests
+    - name: Run unit tests
       run: go test -v ./...
+
+    - name: Run functional tests
+      run: |
+        # Install xsel for clipboard tests
+        sudo apt-get install -y xsel
+        # Run Go functional tests
+        go test -v ./test/functional/...
+        # Run bash functional tests
+        ./test/functional/run_clipboard_tests.sh
 
   lint:
     name: Lint

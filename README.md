@@ -30,10 +30,48 @@ This allows you to provide rich and precise context to the LLM for questions reg
 *   **Git:** The tool uses `git ls-files` to list files and respect `.gitignore`.
 *   **Tree:** Used to generate the project structure visualization.
 *   **File (optional):** Used to detect binary files. If not available, the tool will use heuristics.
+*   **xsel (optional):** Used for clipboard operations in Linux. Required for running the functional tests.
 
 For Nix users:
 *   **Nix:** You must have [Nix installed](https://nixos.org/download.html) on your system.
 *   **Flakes:** The [Nix Flakes](https://nixos.wiki/wiki/Flakes) feature must be enabled (this is often the case by default on recent installations; otherwise, follow the instructions in the Nix documentation).
+
+## Testing
+
+The project includes both unit tests and functional tests:
+
+### Unit Tests
+
+Unit tests are located alongside the code they test, following Go conventions. They test individual components of the application.
+
+To run the unit tests:
+
+```bash
+go test -v ./...
+```
+
+### Functional Tests
+
+Functional tests are located in the `test/functional` directory. They test the entire application workflow from end to end, using a template Git repository created in `/tmp`.
+
+The functional tests include:
+
+1. **Go tests** (`test/functional/functional_test.go`): Test the basic functionality of the application.
+2. **Bash tests** (`test/functional/run_clipboard_tests.sh`): Test the clipboard functionality using `xsel`.
+
+To run the Go functional tests:
+
+```bash
+go test -v ./test/functional/...
+```
+
+To run the bash functional tests:
+
+```bash
+./test/functional/run_clipboard_tests.sh
+```
+
+Note: The bash functional tests require `xsel` to be installed.
 
 ## Installation and Usage
 
