@@ -251,12 +251,13 @@ For Nix users, you can also run the tests using the flake output:
 nix run .#test
 ```
 
-This will run all tests in the project, including:
+This will run both unit tests and functional tests in the project, including:
 - File filtering and pattern matching
 - Text file detection
 - Project tree generation
 - Prompt generation
 - Question input methods (command-line, clipboard, file)
+- End-to-end functional tests with a test Git repository
 
 #### Linting
 

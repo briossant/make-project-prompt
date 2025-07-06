@@ -71,7 +71,10 @@
           program = toString (pkgs.writeShellScript "run-tests" ''
             set -e
             cd ${self}
+            echo "--- Running unit tests ---"
             ${pkgs.go}/bin/go test ./... -v
+            echo "--- Running functional tests ---"
+            ${pkgs.go}/bin/go test ./test/functional/... -v
           '');
         };
 

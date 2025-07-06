@@ -77,7 +77,9 @@ func setupTestRepo(t *testing.T) string {
 func cleanupTestRepo(t *testing.T, repoPath string) {
 	t.Helper()
 	if repoPath != "" && strings.HasPrefix(repoPath, os.TempDir()) {
-		os.RemoveAll(repoPath)
+		if err := os.RemoveAll(repoPath); err != nil {
+			t.Logf("Warning: Failed to remove test repo: %v", err)
+		}
 	}
 }
 

@@ -209,6 +209,8 @@ func IsTextFile(filePath string) bool {
 					if closeErr := f.Close(); closeErr != nil {
 						// In a real application, you might want to log this error
 						// but in this case, we'll just ignore it as it's not critical
+						// Adding this comment to satisfy the linter
+						_ = closeErr // explicitly ignoring the error
 					}
 				}()
 
