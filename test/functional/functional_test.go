@@ -1,53 +1,65 @@
 package functional
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
+	"regexp"
 	"strings"
 	"testing"
 )
 
-// TestMain sets up the test environment and runs all tests
+var mppBinaryPath string
+
+// TestMain compiles the binary once and cleans it up after tests.
 func TestMain(m *testing.M) {
-	// Run tests
+	var err error
+	// Create a temporary file for the binary
+	tempFile, err := os.CreateTemp("", "mpp-test-binary")
+	if err != nil {
+		fmt.Printf("Failed to create temp file for binary: %v\n", err)
+		os.Exit(1)
+	}
+	mppBinaryPath = tempFile.Name()
+	tempFile.Close() // Close the file so the build command can write to it
+
+	// Get project root to find the main package
+	// This assumes the test is in a sub-directory of the project root.
+	wd, _ := os.Getwd() // e.g., /path/to/project/test/functional
+	projectRoot := filepath.Join(wd, "..", "..")
+
+	// Compile the binary
+	buildCmd := exec.Command("go", "build", "-o", mppBinaryPath, "./cmd/make-project-prompt")
+	buildCmd.Dir = projectRoot
+	if output, err := buildCmd.CombinedOutput(); err != nil {
+		fmt.Printf("Failed to build binary: %v\nOutput: %s\n", err, string(output))
+		os.Remove(mppBinaryPath)
+		os.Exit(1)
+	}
+
+	// Run the tests
 	exitCode := m.Run()
 
-	// Exit with the same code
+	// Cleanup
+	os.Remove(mppBinaryPath)
 	os.Exit(exitCode)
 }
 
 // setupTestRepo creates a test Git repository and returns its path
 func setupTestRepo(t *testing.T) string {
 	t.Helper()
-
-	// Get the path to the setup script relative to this file
-	_, filename, _, _ := runtime.Caller(0)
-	dir := filepath.Dir(filename)
-	scriptPath := filepath.Join(dir, "setup_test_repo.sh")
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
-		t.Fatalf("Setup script not found at %s: %v", scriptPath, err)
-	}
-
-	// Run the setup script
-	cmd := exec.Command(scriptPath)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err = cmd.Run()
+	// Get the path to the setup script
+	scriptPath := filepath.Join(".", "setup_test_repo.sh")
+	cmd := exec.Command("bash", scriptPath)
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("Failed to run setup script: %v\nStdout: %s\nStderr: %s", err, stdout.String(), stderr.String())
+		t.Fatalf("Failed to run setup_test_repo.sh: %v\nOutput: %s", err, string(output))
 	}
 
-	// Get the repository path from the last line of stdout
-	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+	// Extract the last line, which contains the repository path
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	repoPath := lines[len(lines)-1]
-	if repoPath == "" {
-		t.Fatalf("Failed to get repository path from setup script output")
-	}
 
 	t.Logf("Test repository created at: %s", repoPath)
 	return repoPath
@@ -56,163 +68,140 @@ func setupTestRepo(t *testing.T) string {
 // cleanupTestRepo removes the test repository
 func cleanupTestRepo(t *testing.T, repoPath string) {
 	t.Helper()
-	if repoPath != "" && strings.HasPrefix(repoPath, "/tmp/") {
-		err := os.RemoveAll(repoPath)
-		if err != nil {
-			t.Logf("Warning: Failed to remove test repository: %v", err)
-		}
+	if repoPath != "" && strings.HasPrefix(repoPath, os.TempDir()) {
+		os.RemoveAll(repoPath)
 	}
 }
 
-// runMPP runs the make-project-prompt command with the given arguments
-func runMPP(t *testing.T, repoPath string, args ...string) (string, string, error) {
-	t.Helper()
-
-	// Build the command
-	cmd := exec.Command("go", append([]string{"run", "cmd/make-project-prompt/main.go"}, args...)...)
-	cmd.Dir = repoPath
-
-	// Capture stdout and stderr
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	// Run the command
-	err := cmd.Run()
-
-	return stdout.String(), stderr.String(), err
-}
-
-// TestBasicFunctionality tests the basic functionality of make-project-prompt
-func TestBasicFunctionality(t *testing.T) {
-	// Setup test repository
+func TestFunctionalMPP(t *testing.T) {
 	repoPath := setupTestRepo(t)
 	defer cleanupTestRepo(t, repoPath)
 
-	// Test with default options
-	stdout, stderr, err := runMPP(t, repoPath, "-q", "Test question")
-	if err != nil {
-		t.Fatalf("Failed to run make-project-prompt: %v\nStdout: %s\nStderr: %s", err, stdout, stderr)
+	// Create a question file for one of the tests
+	questionFilePath := filepath.Join(repoPath, "question.txt")
+	os.WriteFile(questionFilePath, []byte("What is the role of app.go?"), 0644)
+
+	testCases := []struct {
+		name                 string
+		args                 string // Args will be passed to bash -c for glob expansion
+		expectedToContain    []string
+		expectedToNotContain []string
+	}{
+		{
+			name: "Default - all tracked files",
+			args: `-q "Default test"`,
+			expectedToContain: []string{
+				"--- FILE: src/main/app.go ---",
+				"--- FILE: src/test/app_test.go ---",
+				"--- FILE: docs/README.md ---",
+				"--- FILE: .gitignore ---",
+				"Based on the context provided above, answer the following question:\n\nDefault test",
+			},
+			expectedToNotContain: []string{
+				"--- FILE: binary_file.bin ---", // Ignored by .gitignore and binary
+				"--- FILE: build/output.txt ---", // Ignored by .gitignore
+			},
+		},
+		{
+			name: "Include only main go files",
+			args: `-i src/main/app.go -i src/main/utils.go -q "Include Go files"`,
+			expectedToContain: []string{
+				"--- FILE: src/main/app.go ---",
+				"--- FILE: src/main/utils.go ---",
+				"Include Go files",
+			},
+			expectedToNotContain: []string{
+				"--- FILE: src/test/app_test.go ---",
+				"--- FILE: docs/README.md ---",
+			},
+		},
+		{
+			name: "Exclude test files",
+			args: `-e src/test/app_test.go -q "Exclude tests"`,
+			expectedToContain: []string{
+				"--- FILE: src/main/app.go ---",
+				"--- FILE: docs/README.md ---",
+				"Exclude tests",
+			},
+			expectedToNotContain: []string{
+				"--- FILE: src/test/app_test.go ---",
+			},
+		},
+		{
+			name: "Force include binary file",
+			args: `-f binary_file.bin -q "Force include binary"`,
+			expectedToContain: []string{
+				"--- FILE: binary_file.bin ---",
+				"Force include binary",
+			},
+			expectedToNotContain: []string{},
+		},
+		{
+			name: "Question from file",
+			args: fmt.Sprintf(`-qf "%s"`, questionFilePath),
+			expectedToContain: []string{
+				"What is the role of app.go?",
+			},
+			expectedToNotContain: []string{},
+		},
 	}
 
-	// Check that the output contains expected information
-	if !strings.Contains(stdout, "Prompt generated and copied to clipboard!") {
-		t.Errorf("Expected output to contain 'Prompt generated and copied to clipboard!', got: %s", stdout)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			outputFile, err := os.CreateTemp("", "mpp-output-*.txt")
+			if err != nil {
+				t.Fatalf("Failed to create temp output file: %v", err)
+			}
+			defer os.Remove(outputFile.Name())
+			outputFile.Close() // Close file so the command can write to it
+
+			// Construct the command to be run inside the test repo
+			// This is the key: we use 'bash -c' to ensure glob expansion
+			// happens exactly as it would for a real user.
+			commandString := fmt.Sprintf("%s --output %s %s", mppBinaryPath, outputFile.Name(), tc.args)
+			t.Logf("Running command: %s", commandString)
+			t.Logf("From directory: %s", repoPath)
+
+			cmd := exec.Command("bash", "-c", commandString)
+			cmd.Dir = repoPath // Run the command from within the test repository
+
+			// Run and check for errors
+			output, err := cmd.CombinedOutput()
+			t.Logf("Command output:\n%s", string(output))
+			if err != nil {
+				t.Fatalf("Command failed: %v\nOutput:\n%s", err, string(output))
+			}
+
+			// Read the generated prompt
+			promptBytes, err := os.ReadFile(outputFile.Name())
+			if err != nil {
+				t.Fatalf("Failed to read prompt output file: %v", err)
+			}
+			promptContent := string(promptBytes)
+			previewLen := 200
+			if len(promptContent) < previewLen {
+				previewLen = len(promptContent)
+			}
+			t.Logf("Prompt content (first %d chars):\n%s", previewLen, promptContent[:previewLen])
+
+			// Perform assertions
+			for _, expected := range tc.expectedToContain {
+				if !strings.Contains(promptContent, expected) {
+					t.Errorf("Expected prompt to contain:\n---\n%s\n---\n...but it did not.", expected)
+				}
+			}
+			for _, notExpected := range tc.expectedToNotContain {
+				if strings.Contains(promptContent, notExpected) {
+					t.Errorf("Expected prompt to NOT contain:\n---\n%s\n---\n...but it did.", notExpected)
+				}
+			}
+
+			// Example of a more complex assertion using regex
+			// Checks for the tree structure
+			treeRegex := regexp.MustCompile(`\.\n(├──|└──)`)
+			if !treeRegex.MatchString(promptContent) {
+				t.Errorf("Prompt does not appear to contain a valid 'tree' structure.")
+			}
+		})
 	}
-
-	// We can't easily check the clipboard content, but we can check that the command ran successfully
-	t.Logf("make-project-prompt ran successfully with default options")
-}
-
-// TestIncludePatterns tests the -i flag
-func TestIncludePatterns(t *testing.T) {
-	// Setup test repository
-	repoPath := setupTestRepo(t)
-	defer cleanupTestRepo(t, repoPath)
-
-	// Test with include patterns
-	stdout, stderr, err := runMPP(t, repoPath, "-i", "src/main/*.go", "-q", "Test include patterns")
-	if err != nil {
-		t.Fatalf("Failed to run make-project-prompt: %v\nStdout: %s\nStderr: %s", err, stdout, stderr)
-	}
-
-	// Check that the output contains expected information
-	if !strings.Contains(stdout, "Inclusion patterns: [src/main/*.go]") {
-		t.Errorf("Expected output to contain 'Inclusion patterns: [src/main/*.go]', got: %s", stdout)
-	}
-
-	t.Logf("make-project-prompt ran successfully with include patterns")
-}
-
-// TestExcludePatterns tests the -e flag
-func TestExcludePatterns(t *testing.T) {
-	// Setup test repository
-	repoPath := setupTestRepo(t)
-	defer cleanupTestRepo(t, repoPath)
-
-	// Test with exclude patterns
-	stdout, stderr, err := runMPP(t, repoPath, "-e", "src/test/*", "-q", "Test exclude patterns")
-	if err != nil {
-		t.Fatalf("Failed to run make-project-prompt: %v\nStdout: %s\nStderr: %s", err, stdout, stderr)
-	}
-
-	// Check that the output contains expected information
-	if !strings.Contains(stdout, "Exclusion patterns: [src/test/*]") {
-		t.Errorf("Expected output to contain 'Exclusion patterns: [src/test/*]', got: %s", stdout)
-	}
-
-	t.Logf("make-project-prompt ran successfully with exclude patterns")
-}
-
-// TestForceIncludePatterns tests the -f flag
-func TestForceIncludePatterns(t *testing.T) {
-	// Setup test repository
-	repoPath := setupTestRepo(t)
-	defer cleanupTestRepo(t, repoPath)
-
-	// Test with force include patterns
-	stdout, stderr, err := runMPP(t, repoPath, "-f", "binary_file.bin", "-q", "Test force include patterns")
-	if err != nil {
-		t.Fatalf("Failed to run make-project-prompt: %v\nStdout: %s\nStderr: %s", err, stdout, stderr)
-	}
-
-	// Check that the output contains expected information
-	if !strings.Contains(stdout, "Force inclusion patterns: [binary_file.bin]") {
-		t.Errorf("Expected output to contain 'Force inclusion patterns: [binary_file.bin]', got: %s", stdout)
-	}
-
-	t.Logf("make-project-prompt ran successfully with force include patterns")
-}
-
-// TestQuestionFromFile tests the -qf flag
-func TestQuestionFromFile(t *testing.T) {
-	// Setup test repository
-	repoPath := setupTestRepo(t)
-	defer cleanupTestRepo(t, repoPath)
-
-	// Create a question file
-	questionFile := filepath.Join(repoPath, "question.txt")
-	err := os.WriteFile(questionFile, []byte("Question from file"), 0644)
-	if err != nil {
-		t.Fatalf("Failed to create question file: %v", err)
-	}
-
-	// Test with question from file
-	stdout, stderr, err := runMPP(t, repoPath, "-qf", questionFile)
-	if err != nil {
-		t.Fatalf("Failed to run make-project-prompt: %v\nStdout: %s\nStderr: %s", err, stdout, stderr)
-	}
-
-	// Check that the output contains expected information
-	if !strings.Contains(stdout, fmt.Sprintf("Using question from file %s", questionFile)) {
-		t.Errorf("Expected output to contain 'Using question from file %s', got: %s", questionFile, stdout)
-	}
-
-	t.Logf("make-project-prompt ran successfully with question from file")
-}
-
-// TestCombinedOptions tests combining multiple options
-func TestCombinedOptions(t *testing.T) {
-	// Setup test repository
-	repoPath := setupTestRepo(t)
-	defer cleanupTestRepo(t, repoPath)
-
-	// Test with combined options
-	stdout, stderr, err := runMPP(t, repoPath, "-i", "src/main/*.go", "-e", "src/main/utils.go", "-f", "binary_file.bin", "-q", "Test combined options")
-	if err != nil {
-		t.Fatalf("Failed to run make-project-prompt: %v\nStdout: %s\nStderr: %s", err, stdout, stderr)
-	}
-
-	// Check that the output contains expected information
-	if !strings.Contains(stdout, "Inclusion patterns: [src/main/*.go]") {
-		t.Errorf("Expected output to contain 'Inclusion patterns: [src/main/*.go]', got: %s", stdout)
-	}
-	if !strings.Contains(stdout, "Exclusion patterns: [src/main/utils.go]") {
-		t.Errorf("Expected output to contain 'Exclusion patterns: [src/main/utils.go]', got: %s", stdout)
-	}
-	if !strings.Contains(stdout, "Force inclusion patterns: [binary_file.bin]") {
-		t.Errorf("Expected output to contain 'Force inclusion patterns: [binary_file.bin]', got: %s", stdout)
-	}
-
-	t.Logf("make-project-prompt ran successfully with combined options")
 }
