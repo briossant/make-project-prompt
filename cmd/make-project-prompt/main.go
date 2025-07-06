@@ -144,19 +144,20 @@ func customParseArgs() {
 				i++ // Skip the value in the next iteration
 
 				// Process the flag and its value
-				if currentFlag == "-q" || currentFlag == "--q" {
+				switch currentFlag {
+				case "-q", "--q":
 					question = value
- 			} else if currentFlag == "-qf" || currentFlag == "--qf" {
- 				questionFile = value
- 			} else if currentFlag == "-output" || currentFlag == "--output" {
- 				outputFile = value
- 			} else if currentFlag == "-i" || currentFlag == "--i" {
- 				includePatterns = append(includePatterns, value)
- 			} else if currentFlag == "-e" || currentFlag == "--e" {
- 				excludePatterns = append(excludePatterns, value)
- 			} else if currentFlag == "-f" || currentFlag == "--f" {
- 				forceIncludePatterns = append(forceIncludePatterns, value)
- 			}
+				case "-qf", "--qf":
+					questionFile = value
+				case "-output", "--output":
+					outputFile = value
+				case "-i", "--i":
+					includePatterns = append(includePatterns, value)
+				case "-e", "--e":
+					excludePatterns = append(excludePatterns, value)
+				case "-f", "--f":
+					forceIncludePatterns = append(forceIncludePatterns, value)
+				}
 			}
 		} else if currentFlag == "-i" || currentFlag == "--i" {
 			// This is a non-flag argument following -i, add it to includePatterns
@@ -237,11 +238,12 @@ func main() {
 	lastQFIndex := -1
 
 	for i, arg := range originalArgs {
-		if arg == "-q" || arg == "--q" {
+		switch arg {
+		case "-q", "--q":
 			lastQIndex = i
-		} else if arg == "-c" || arg == "--c" {
+		case "-c", "--c":
 			lastCIndex = i
-		} else if arg == "-qf" || arg == "--qf" {
+		case "-qf", "--qf":
 			lastQFIndex = i
 		}
 	}

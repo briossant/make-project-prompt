@@ -258,6 +258,16 @@ This will run all tests in the project, including:
 - Prompt generation
 - Question input methods (command-line, clipboard, file)
 
+#### Linting
+
+The project uses `golangci-lint` to ensure code quality. The same linter configuration from the CI workflow can be run locally using Nix:
+
+```bash
+nix run .#lint
+```
+
+This command not only checks for linting errors but also automatically fixes them when possible, making it easy to maintain code quality with minimal effort. Make sure to run this command from the root of your project directory to ensure it can properly access and modify your source files.
+
 The project also includes a GitHub Actions workflow that automatically runs tests on push and pull requests. This ensures that all changes are tested before being merged.
 
 ### Development Environment
