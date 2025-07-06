@@ -263,7 +263,8 @@ func GetProjectTree() (string, error) {
 	// Directories to ignore in tree output
 	ignorePattern := ".git|node_modules|vendor|dist|build"
 
-	cmd := exec.Command("tree", "-I", ignorePattern)
+	// Use --charset=utf-8 to ensure Unicode characters are used for the tree structure
+	cmd := exec.Command("tree", "-I", ignorePattern, "--charset=utf-8")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
