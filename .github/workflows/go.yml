@@ -44,11 +44,7 @@ jobs:
           experimental-features = nix-command flakes
 
     - name: Test Nix Flake Build
-      run: nix build
-      # This command attempts to build the default package (`.#`).
-      # It will fail if the flake.nix has syntax errors, if dependencies
-      # are wrong, or most importantly, if the vendorHash is incorrect.
-      # This ensures the flake is always buildable for users.
+      run: nix run .#make-project-prompt -- -h
 
   lint:
     name: Lint
