@@ -29,7 +29,7 @@
           # Use the computed hash for the vendor directory
           vendorHash = "sha256-MtzrTRbcG9lMJqN6rcOnwW6xYJbJ3b0J3fuaq9hlEuo=";
 
-          nativeBuildInputs = [ pkgs.makeWrapper ];
+          nativeBuildInputs = with pkgs; [ makeWrapper gitMinimal tree file ];
 
           postInstall = ''
             ln -s $out/bin/${pname} $out/bin/mpp
@@ -69,8 +69,24 @@
         apps.test = {
           type = "app";
           program = toString (pkgs.writeShellScript "run-tests" ''
+            set -e
             cd ${self}
+            echo "--- Running unit tests ---"
             ${pkgs.go}/bin/go test ./... -v
+            echo "--- Running functional tests ---"
+            ${pkgs.go}/bin/go test ./test/functional/... -v
+          '');
+        };
+
+        # Linter app
+        apps.lint = {
+          type = "app";
+          program = toString (pkgs.writeShellScript "run-linter" ''
+            set -e
+            echo "--- Running golangci-lint from flake with auto-fix enabled ---"
+            # Execute the linter with auto-fix enabled on the current directory
+            # This will work on the actual project files, not the read-only Nix store
+            ${pkgs.golangci-lint}/bin/golangci-lint run --fix
           '');
         };
 

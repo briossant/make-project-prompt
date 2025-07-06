@@ -21,6 +21,7 @@ var (
 	question             string
 	useClipboard         bool
 	questionFile         string
+	outputFile           string
 	showHelp             bool
 )
 
@@ -44,6 +45,7 @@ func init() {
 	flag.StringVar(&question, "q", "[YOUR QUESTION HERE]", "Specifies the question for the LLM.")
 	flag.BoolVar(&useClipboard, "c", false, "Use clipboard content as the question for the LLM.")
 	flag.StringVar(&questionFile, "qf", "", "Path to a file containing the question for the LLM.")
+	flag.StringVar(&outputFile, "output", "", "Write prompt to a file instead of the clipboard (for testing).")
 	flag.BoolVar(&showHelp, "h", false, "Displays help message.")
 
 	// Override usage message
@@ -142,15 +144,18 @@ func customParseArgs() {
 				i++ // Skip the value in the next iteration
 
 				// Process the flag and its value
-				if currentFlag == "-q" || currentFlag == "--q" {
+				switch currentFlag {
+				case "-q", "--q":
 					question = value
-				} else if currentFlag == "-qf" || currentFlag == "--qf" {
+				case "-qf", "--qf":
 					questionFile = value
-				} else if currentFlag == "-i" || currentFlag == "--i" {
+				case "-output", "--output":
+					outputFile = value
+				case "-i", "--i":
 					includePatterns = append(includePatterns, value)
-				} else if currentFlag == "-e" || currentFlag == "--e" {
+				case "-e", "--e":
 					excludePatterns = append(excludePatterns, value)
-				} else if currentFlag == "-f" || currentFlag == "--f" {
+				case "-f", "--f":
 					forceIncludePatterns = append(forceIncludePatterns, value)
 				}
 			}
@@ -233,11 +238,12 @@ func main() {
 	lastQFIndex := -1
 
 	for i, arg := range originalArgs {
-		if arg == "-q" || arg == "--q" {
+		switch arg {
+		case "-q", "--q":
 			lastQIndex = i
-		} else if arg == "-c" || arg == "--c" {
+		case "-c", "--c":
 			lastCIndex = i
-		} else if arg == "-qf" || arg == "--qf" {
+		case "-qf", "--qf":
 			lastQFIndex = i
 		}
 	}
@@ -308,14 +314,24 @@ func main() {
 		log.Fatalf("Error: %v", err)
 	}
 
-	// Copy to clipboard
-	if err := clipboard.WriteAll(prompt); err != nil {
-		log.Fatalf("Error copying to clipboard: %v\nYou may need to install a clipboard manager or run this tool in a graphical environment.", err)
+	// If an output file is specified, write to it. Otherwise, use clipboard.
+	if outputFile != "" {
+		err = os.WriteFile(outputFile, []byte(prompt), 0644)
+		if err != nil {
+			log.Fatalf("Error writing to output file: %v", err)
+		}
+		fmt.Println("-------------------------------------")
+		fmt.Printf("Prompt generated and written to %s!\n", outputFile)
+	} else {
+		// Copy to clipboard
+		if err := clipboard.WriteAll(prompt); err != nil {
+			log.Fatalf("Error copying to clipboard: %v\nYou may need to install a clipboard manager or run this tool in a graphical environment.", err)
+		}
+		fmt.Println("-------------------------------------")
+		fmt.Println("Prompt generated and copied to clipboard!")
 	}
 
 	// User feedback
-	fmt.Println("-------------------------------------")
-	fmt.Println("Prompt generated and copied to clipboard!")
 	fmt.Println("Number of files included:", fileCount)
 	if question == "[YOUR QUESTION HERE]" {
 		fmt.Println("NOTE: No question specified with -q. Remember to replace '[YOUR QUESTION HERE]'.")

@@ -27,8 +27,28 @@ jobs:
     - name: Get dependencies
       run: go get -v -t -d ./...
 
-    - name: Run tests
+    - name: Run unit tests
       run: go test -v ./...
+
+    - name: Run functional tests
+      run: |
+        # Run Go functional tests
+        go test -v ./test/functional/...
+
+    # Nix flake testing
+    - name: Install Nix
+      uses: cachix/install-nix-action@v26
+      with:
+        # Enable flakes and the nix command
+        extra_nix_config: |
+          experimental-features = nix-command flakes
+
+    - name: Test Nix Flake Build
+      run: nix build
+      # This command attempts to build the default package (`.#`).
+      # It will fail if the flake.nix has syntax errors, if dependencies
+      # are wrong, or most importantly, if the vendorHash is incorrect.
+      # This ensures the flake is always buildable for users.
 
   lint:
     name: Lint

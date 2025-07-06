@@ -205,7 +205,14 @@ func IsTextFile(filePath string) bool {
 			// Try to read a small portion of the file to check if it's text
 			f, err := os.Open(filePath)
 			if err == nil {
-				defer f.Close()
+				defer func() {
+					if closeErr := f.Close(); closeErr != nil {
+						// In a real application, you might want to log this error
+						// but in this case, we'll just ignore it as it's not critical
+						// Adding this comment to satisfy the linter
+						_ = closeErr // explicitly ignoring the error
+					}
+				}()
 
 				// Read first 512 bytes
 				buf := make([]byte, 512)
@@ -256,7 +263,8 @@ func GetProjectTree() (string, error) {
 	// Directories to ignore in tree output
 	ignorePattern := ".git|node_modules|vendor|dist|build"
 
-	cmd := exec.Command("tree", "-I", ignorePattern)
+	// Use --charset=utf-8 to ensure Unicode characters are used for the tree structure
+	cmd := exec.Command("tree", "-I", ignorePattern, "--charset=utf-8")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
