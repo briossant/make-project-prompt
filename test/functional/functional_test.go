@@ -22,7 +22,10 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	mppBinaryPath = tempFile.Name()
-	tempFile.Close() // Close the file so the build command can write to it
+	if err := tempFile.Close(); err != nil { // Close the file so the build command can write to it
+		fmt.Printf("Warning: Failed to close temp file: %v\n", err)
+		// Continue anyway, as this is not a critical error
+	}
 
 	// Get project root to find the main package
 	// This assumes the test is in a sub-directory of the project root.
@@ -34,7 +37,9 @@ func TestMain(m *testing.M) {
 	buildCmd.Dir = projectRoot
 	if output, err := buildCmd.CombinedOutput(); err != nil {
 		fmt.Printf("Failed to build binary: %v\nOutput: %s\n", err, string(output))
-		os.Remove(mppBinaryPath)
+		if removeErr := os.Remove(mppBinaryPath); removeErr != nil {
+			fmt.Printf("Warning: Failed to remove binary file: %v\n", removeErr)
+		}
 		os.Exit(1)
 	}
 
@@ -42,7 +47,10 @@ func TestMain(m *testing.M) {
 	exitCode := m.Run()
 
 	// Cleanup
-	os.Remove(mppBinaryPath)
+	if err := os.Remove(mppBinaryPath); err != nil {
+		fmt.Printf("Warning: Failed to remove binary file during cleanup: %v\n", err)
+		// Continue with exit, as this is not a critical error
+	}
 	os.Exit(exitCode)
 }
 
@@ -79,7 +87,9 @@ func TestFunctionalMPP(t *testing.T) {
 
 	// Create a question file for one of the tests
 	questionFilePath := filepath.Join(repoPath, "question.txt")
-	os.WriteFile(questionFilePath, []byte("What is the role of app.go?"), 0644)
+	if err := os.WriteFile(questionFilePath, []byte("What is the role of app.go?"), 0644); err != nil {
+		t.Fatalf("Failed to create question file: %v", err)
+	}
 
 	testCases := []struct {
 		name                 string
@@ -152,8 +162,14 @@ func TestFunctionalMPP(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to create temp output file: %v", err)
 			}
-			defer os.Remove(outputFile.Name())
-			outputFile.Close() // Close file so the command can write to it
+			defer func() {
+				if err := os.Remove(outputFile.Name()); err != nil {
+					t.Logf("Warning: Failed to remove temp output file: %v", err)
+				}
+			}()
+			if err := outputFile.Close(); err != nil { // Close file so the command can write to it
+				t.Fatalf("Failed to close temp output file: %v", err)
+			}
 
 			// Construct the command to be run inside the test repo
 			// This is the key: we use 'bash -c' to ensure glob expansion

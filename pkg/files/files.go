@@ -205,7 +205,12 @@ func IsTextFile(filePath string) bool {
 			// Try to read a small portion of the file to check if it's text
 			f, err := os.Open(filePath)
 			if err == nil {
-				defer f.Close()
+				defer func() {
+					if closeErr := f.Close(); closeErr != nil {
+						// In a real application, you might want to log this error
+						// but in this case, we'll just ignore it as it's not critical
+					}
+				}()
 
 				// Read first 512 bytes
 				buf := make([]byte, 512)

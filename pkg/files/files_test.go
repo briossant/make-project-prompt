@@ -31,7 +31,11 @@ func setupTestRepo(t *testing.T) string {
 
 func TestListGitFiles_Hermetic(t *testing.T) {
 	repoPath := setupTestRepo(t)
-	defer os.RemoveAll(repoPath)
+	defer func() {
+		if err := os.RemoveAll(repoPath); err != nil {
+			t.Logf("Warning: Failed to remove test repo: %v", err)
+		}
+	}()
 
 	// Change working directory to the test repo for the duration of the test
 	originalWD, err := os.Getwd()
@@ -41,7 +45,11 @@ func TestListGitFiles_Hermetic(t *testing.T) {
 	if err := os.Chdir(repoPath); err != nil {
 		t.Fatalf("Failed to change directory to test repo: %v", err)
 	}
-	defer os.Chdir(originalWD) // Change back when done
+	defer func() {
+		if err := os.Chdir(originalWD); err != nil {
+			t.Logf("Warning: Failed to change back to original directory: %v", err)
+		}
+	}() // Change back when done
 
 	testCases := []struct {
 		name                 string
@@ -170,7 +178,11 @@ func TestIsTextFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp directory: %v", err)
+		}
+	}()
 
 	// Test cases
 	testCases := []struct {
