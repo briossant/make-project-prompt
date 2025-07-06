@@ -29,7 +29,7 @@
           # Use the computed hash for the vendor directory
           vendorHash = "sha256-MtzrTRbcG9lMJqN6rcOnwW6xYJbJ3b0J3fuaq9hlEuo=";
 
-          nativeBuildInputs = [ pkgs.makeWrapper ];
+          nativeBuildInputs = [ pkgs.makeWrapper pkgs.gitMinimal ];
 
           postInstall = ''
             ln -s $out/bin/${pname} $out/bin/mpp
