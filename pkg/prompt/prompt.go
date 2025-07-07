@@ -15,14 +15,16 @@ type Generator struct {
 	Files      []files.FileInfo
 	Question   string
 	MaxFileSize int64
+	QuietMode   bool
 }
 
 // NewGenerator creates a new prompt generator
-func NewGenerator(fileInfos []files.FileInfo, question string) *Generator {
+func NewGenerator(fileInfos []files.FileInfo, question string, quietMode bool) *Generator {
 	return &Generator{
 		Files:      fileInfos,
 		Question:   question,
 		MaxFileSize: 1048576, // 1MB default max file size
+		QuietMode:   quietMode,
 	}
 }
 
@@ -43,7 +45,9 @@ func (g *Generator) Generate() (string, int, error) {
 	promptContent.WriteString("--- PROJECT STRUCTURE (based on 'tree', may differ slightly from included files) ---\n")
 	projectTree, err := files.GetProjectTree()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Failed to get project tree: %v\n", err)
+		if !g.QuietMode {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to get project tree: %v\n", err)
+		}
 		promptContent.WriteString("Error running tree command.\n")
 	} else {
 		promptContent.WriteString(projectTree)
@@ -56,26 +60,34 @@ func (g *Generator) Generate() (string, int, error) {
 	for _, file := range g.Files {
 		// Skip if not a regular file
 		if !file.IsRegular {
-			fmt.Fprintf(os.Stderr, "Warning: File '%s' is not a regular file. Skipping.\n", file.Path)
+			if !g.QuietMode {
+				fmt.Fprintf(os.Stderr, "Warning: File '%s' is not a regular file. Skipping.\n", file.Path)
+			}
 			continue
 		}
 
 		// Skip if file is too large (unless force included)
 		if !file.IsForced && file.Size > g.MaxFileSize {
-			fmt.Fprintf(os.Stderr, "Info: Skipping file '%s' because it is too large (> 1MiB).\n", file.Path)
+			if !g.QuietMode {
+				fmt.Fprintf(os.Stderr, "Info: Skipping file '%s' because it is too large (> 1MiB).\n", file.Path)
+			}
 			continue
 		}
 
 		// Skip if not a text file (unless force included)
 		if !file.IsForced && !file.IsText {
-			fmt.Fprintf(os.Stderr, "Info: Skipping file '%s' (non-text file).\n", file.Path)
+			if !g.QuietMode {
+				fmt.Fprintf(os.Stderr, "Info: Skipping file '%s' (non-text file).\n", file.Path)
+			}
 			continue
 		}
 
 		// Read file content
 		content, err := os.ReadFile(file.Path)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: Failed to read content of '%s': %v. Skipping.\n", file.Path, err)
+			if !g.QuietMode {
+				fmt.Fprintf(os.Stderr, "Warning: Failed to read content of '%s': %v. Skipping.\n", file.Path, err)
+			}
 			continue
 		}
 

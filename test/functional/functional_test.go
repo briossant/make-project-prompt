@@ -203,6 +203,84 @@ func TestFunctionalMPP_SuccessCases(t *testing.T) {
 	}
 }
 
+func TestFunctionalMPP_StdoutOutput(t *testing.T) {
+	repoPath := setupTestRepo(t)
+	defer cleanupTestRepo(t, repoPath)
+
+	t.Run("Stdout output with quiet mode", func(t *testing.T) {
+		// Run the command with stdout output and quiet mode
+		commandString := fmt.Sprintf(`%s -i src/main/app.go -q "Test stdout output" --stdout --quiet`, mppBinaryPath)
+		cmd := exec.Command("bash", "-c", commandString)
+		cmd.Dir = repoPath
+
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("Command failed: %v\nOutput:\n%s", err, string(output))
+		}
+
+		// Check that the output contains the prompt but not the usual status messages
+		if !strings.Contains(string(output), "--- FILE: src/main/app.go ---") {
+			t.Errorf("Expected stdout to contain file content, but it did not.")
+		}
+		if !strings.Contains(string(output), "Based on the context provided above") {
+			t.Errorf("Expected stdout to contain prompt footer, but it did not.")
+		}
+		if strings.Contains(string(output), "Starting make-project-prompt") {
+			t.Errorf("Expected stdout to NOT contain startup message, but it did.")
+		}
+		if strings.Contains(string(output), "Prompt generated and") {
+			t.Errorf("Expected stdout to NOT contain success message, but it did.")
+		}
+	})
+
+	t.Run("File output with quiet mode", func(t *testing.T) {
+		outputFile, err := os.CreateTemp("", "mpp-output-*.txt")
+		if err != nil {
+			t.Fatalf("Failed to create temp output file: %v", err)
+		}
+		defer func() {
+			if err := os.Remove(outputFile.Name()); err != nil {
+				t.Logf("Warning: Failed to remove temp output file: %v", err)
+			}
+		}()
+		if err := outputFile.Close(); err != nil {
+			t.Fatalf("Failed to close temp output file: %v", err)
+		}
+
+		// Run the command with file output and quiet mode
+		commandString := fmt.Sprintf(`%s -i src/main/app.go -q "Test file output with quiet" --output %s --quiet`, mppBinaryPath, outputFile.Name())
+		cmd := exec.Command("bash", "-c", commandString)
+		cmd.Dir = repoPath
+
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("Command failed: %v\nOutput:\n%s", err, string(output))
+		}
+
+		// Check that the command output doesn't contain the usual status messages
+		if strings.Contains(string(output), "Starting make-project-prompt") {
+			t.Errorf("Expected command output to NOT contain startup message, but it did.")
+		}
+		if strings.Contains(string(output), "Prompt generated and") {
+			t.Errorf("Expected command output to NOT contain success message, but it did.")
+		}
+
+		// Check that the file contains the prompt
+		promptBytes, err := os.ReadFile(outputFile.Name())
+		if err != nil {
+			t.Fatalf("Failed to read prompt output file: %v", err)
+		}
+		promptContent := string(promptBytes)
+
+		if !strings.Contains(promptContent, "--- FILE: src/main/app.go ---") {
+			t.Errorf("Expected output file to contain file content, but it did not.")
+		}
+		if !strings.Contains(promptContent, "Based on the context provided above") {
+			t.Errorf("Expected output file to contain prompt footer, but it did not.")
+		}
+	})
+}
+
 func TestFunctionalMPP_ErrorCases(t *testing.T) {
 	repoPath := setupTestRepo(t)
 	defer cleanupTestRepo(t, repoPath)

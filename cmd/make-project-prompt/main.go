@@ -22,6 +22,8 @@ var (
 	useClipboard         bool
 	questionFile         string
 	outputFile           string
+	useStdout            bool
+	quietMode            bool
 	showHelp             bool
 )
 
@@ -46,19 +48,27 @@ func init() {
 	flag.BoolVar(&useClipboard, "c", false, "Use clipboard content as the question for the LLM.")
 	flag.StringVar(&questionFile, "qf", "", "Path to a file containing the question for the LLM.")
 	flag.StringVar(&outputFile, "output", "", "Write prompt to a file instead of the clipboard (for testing).")
+	flag.BoolVar(&useStdout, "stdout", false, "Write prompt to stdout instead of the clipboard.")
+	flag.BoolVar(&quietMode, "quiet", false, "Suppress all non-essential output. Useful with --stdout or --output for scripting.")
 	flag.BoolVar(&showHelp, "h", false, "Displays help message.")
 
 	// Override usage message
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [-i <file_path>] [-e <file_path>] [-f <file_path>] [-q \"question\"] [-c] [-qf file] [-h]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [-i <file_path>] [-e <file_path>] [-f <file_path>] [-q \"question\"] [-c] [-qf file] [--stdout] [--quiet] [--output file] [-h]\n\n", os.Args[0])
 		fmt.Fprintln(os.Stderr, "Options:")
 		flag.PrintDefaults()
 		fmt.Fprintln(os.Stderr, "\nNote: If multiple question input methods (-q, -c, -qf) are provided, the last one in the command line takes precedence.")
+		fmt.Fprintln(os.Stderr, "\nOutput options:")
+		fmt.Fprintln(os.Stderr, "  By default, the prompt is copied to the clipboard.")
+		fmt.Fprintln(os.Stderr, "  --output <file>: Write prompt to a file instead of the clipboard.")
+		fmt.Fprintln(os.Stderr, "  --stdout: Write prompt to stdout instead of the clipboard.")
+		fmt.Fprintln(os.Stderr, "  --quiet: Suppress all non-essential output. Useful with --stdout or --output for scripting.")
 		fmt.Fprintln(os.Stderr, "\nExamples (with shell glob expansion):")
 		fmt.Fprintln(os.Stderr, "  make-project-prompt -i src/**/*.js -e **/__tests__/* -q \"Refactor this React code to use Hooks.\"")
 		fmt.Fprintln(os.Stderr, "  make-project-prompt -i *.go -f assets/*.bin -c")
 		fmt.Fprintln(os.Stderr, "  make-project-prompt -i *.py -qf question.txt  # Read question from file")
 		fmt.Fprintln(os.Stderr, "  make-project-prompt -i *.py -q \"Initial question\" -c  # Clipboard content will be used (last option wins)")
+		fmt.Fprintln(os.Stderr, "  make-project-prompt -i *.py -q \"Question\" --stdout --quiet  # Output only the prompt to stdout")
 		fmt.Fprintln(os.Stderr, "\nNote: Glob patterns (like *.go) are expanded by your shell before being passed to this program.")
 	}
 }
@@ -94,10 +104,10 @@ func processFilesAndGeneratePrompt() (string, int, error) {
 		}
 	}
 
-	fmt.Printf("Found %d files matching the specified patterns.\n", len(fileInfos))
+	printInfo("Found %d files matching the specified patterns.\n", len(fileInfos))
 
 	// Generate prompt
-	generator := prompt.NewGenerator(fileInfos, question)
+	generator := prompt.NewGenerator(fileInfos, question, quietMode)
 	promptText, fileCount, err := generator.Generate()
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to generate prompt: %w", err)
@@ -129,12 +139,18 @@ func customParseArgs() {
 			// Process the flag
 			currentFlag = arg
 
-			// Handle boolean flags (like -h, -c)
+			// Handle boolean flags (like -h, -c, --stdout, --quiet)
 			if currentFlag == "-h" || currentFlag == "--h" {
 				showHelp = true
 				continue
 			} else if currentFlag == "-c" || currentFlag == "--c" {
 				useClipboard = true
+				continue
+			} else if currentFlag == "-stdout" || currentFlag == "--stdout" {
+				useStdout = true
+				continue
+			} else if currentFlag == "-quiet" || currentFlag == "--quiet" {
+				quietMode = true
 				continue
 			}
 
@@ -203,11 +219,18 @@ func checkDependencies() error {
 	optionalCommands := []string{"file"}
 	for _, cmdName := range optionalCommands {
 		if _, err := exec.LookPath(cmdName); err != nil {
-			fmt.Printf("Warning: Optional command '%s' not found. Some features may not work correctly.\n", cmdName)
+			printInfo("Warning: Optional command '%s' not found. Some features may not work correctly.\n", cmdName)
 		}
 	}
 
 	return nil
+}
+
+// printInfo prints informational messages unless quiet mode is enabled
+func printInfo(format string, a ...interface{}) {
+	if !quietMode {
+		fmt.Printf(format, a...)
+	}
 }
 
 func main() {
@@ -224,7 +247,12 @@ func main() {
 		os.Exit(0)
 	}
 
-	fmt.Println("Starting make-project-prompt (Go version)...")
+	// Validate output options
+	if useStdout && outputFile != "" {
+		log.Fatalf("Error: Cannot use both --stdout and --output options at the same time.")
+	}
+
+	printInfo("Starting make-project-prompt (Go version)...\n")
 
 	// Check dependencies
 	if err := checkDependencies(); err != nil {
@@ -259,7 +287,7 @@ func main() {
 			log.Fatalf("Error: File %s is empty. Please provide a file with content.", questionFile)
 		}
 		question = string(fileContent)
-		fmt.Printf("Using question from file %s (last option wins).\n", questionFile)
+		printInfo("Using question from file %s (last option wins).\n", questionFile)
 	} else if lastCIndex > lastQIndex && lastCIndex > lastQFIndex && useClipboard {
 		// Read from clipboard (it was the last option)
 		clipContent, err := clipboard.ReadAll()
@@ -270,10 +298,10 @@ func main() {
 			log.Fatalf("Error: Clipboard is empty. Please copy your question to the clipboard first.")
 		}
 		question = clipContent
-		fmt.Println("Using question from clipboard (last option wins).")
+		printInfo("Using question from clipboard (last option wins).\n")
 	} else if lastQIndex > lastCIndex && lastQIndex > lastQFIndex && question != "[YOUR QUESTION HERE]" {
 		// Using question from -q flag (it was the last option)
-		fmt.Println("Using question from command line (last option wins).")
+		printInfo("Using question from command line (last option wins).\n")
 	} else if questionFile != "" {
 		// Only file flag was provided
 		fileContent, err := os.ReadFile(questionFile)
@@ -284,7 +312,7 @@ func main() {
 			log.Fatalf("Error: File %s is empty. Please provide a file with content.", questionFile)
 		}
 		question = string(fileContent)
-		fmt.Printf("Using question from file %s.\n", questionFile)
+		printInfo("Using question from file %s.\n", questionFile)
 	} else if useClipboard {
 		// Only clipboard flag was provided
 		clipContent, err := clipboard.ReadAll()
@@ -295,18 +323,18 @@ func main() {
 			log.Fatalf("Error: Clipboard is empty. Please copy your question to the clipboard first.")
 		}
 		question = clipContent
-		fmt.Println("Using question from clipboard.")
+		printInfo("Using question from clipboard.\n")
 	}
 
 	// Display options
-	fmt.Println("Inclusion patterns:", includePatterns)
+	printInfo("Inclusion patterns: %v\n", includePatterns)
 	if len(excludePatterns) > 0 {
-		fmt.Println("Exclusion patterns:", excludePatterns)
+		printInfo("Exclusion patterns: %v\n", excludePatterns)
 	}
 	if len(forceIncludePatterns) > 0 {
-		fmt.Println("Force inclusion patterns:", forceIncludePatterns)
+		printInfo("Force inclusion patterns: %v\n", forceIncludePatterns)
 	}
-	fmt.Println("Question:", question)
+	printInfo("Question: %s\n", question)
 
 	// Process files and generate prompt
 	prompt, fileCount, err := processFilesAndGeneratePrompt()
@@ -314,28 +342,34 @@ func main() {
 		log.Fatalf("Error: %v", err)
 	}
 
-	// If an output file is specified, write to it. Otherwise, use clipboard.
-	if outputFile != "" {
+	// Handle output based on flags
+	if useStdout {
+		// Write to stdout
+		fmt.Print(prompt)
+	} else if outputFile != "" {
+		// Write to file
 		err = os.WriteFile(outputFile, []byte(prompt), 0644)
 		if err != nil {
 			log.Fatalf("Error writing to output file: %v", err)
 		}
-		fmt.Println("-------------------------------------")
-		fmt.Printf("Prompt generated and written to %s!\n", outputFile)
+		printInfo("-------------------------------------\n")
+		printInfo("Prompt generated and written to %s!\n", outputFile)
 	} else {
-		// Copy to clipboard
+		// Copy to clipboard (default)
 		if err := clipboard.WriteAll(prompt); err != nil {
 			log.Fatalf("Error copying to clipboard: %v\nYou may need to install a clipboard manager or run this tool in a graphical environment.", err)
 		}
-		fmt.Println("-------------------------------------")
-		fmt.Println("Prompt generated and copied to clipboard!")
+		printInfo("-------------------------------------\n")
+		printInfo("Prompt generated and copied to clipboard!\n")
 	}
 
 	// User feedback
-	fmt.Println("Number of files included:", fileCount)
+	printInfo("Number of files included: %d\n", fileCount)
 	if question == "[YOUR QUESTION HERE]" {
-		fmt.Println("NOTE: No question specified with -q. Remember to replace '[YOUR QUESTION HERE]'.")
+		printInfo("NOTE: No question specified with -q. Remember to replace '[YOUR QUESTION HERE]'.\n")
 	}
-	fmt.Println("Paste (Ctrl+Shift+V or middle-click) into your LLM.")
-	fmt.Println("-------------------------------------")
+	if !useStdout {
+		printInfo("Paste (Ctrl+Shift+V or middle-click) into your LLM.\n")
+	}
+	printInfo("-------------------------------------\n")
 }
