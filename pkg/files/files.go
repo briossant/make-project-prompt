@@ -80,15 +80,10 @@ func ListGitFiles(config Config) ([]FileInfo, error) {
 func filterFiles(files []string, config Config) ([]FileInfo, error) {
 	var result []FileInfo
 
-	// Convert patterns to maps for O(1) lookup
+	// Convert include/force patterns to maps for O(1) lookup
 	includePatterns := make(map[string]bool)
 	for _, pattern := range config.IncludePatterns {
 		includePatterns[pattern] = true
-	}
-
-	excludePatterns := make(map[string]bool)
-	for _, pattern := range config.ExcludePatterns {
-		excludePatterns[pattern] = true
 	}
 
 	forceIncludePatterns := make(map[string]bool)
@@ -115,10 +110,18 @@ func filterFiles(files []string, config Config) ([]FileInfo, error) {
 			continue
 		}
 
-		// Check if file should be excluded
-		excluded := excludePatterns[file]
+		// ***MODIFIED LOGIC***: Check for directory exclusion
+		excluded := false
+		for _, excludePattern := range config.ExcludePatterns {
+			// Normalize pattern by removing any trailing slash for consistent matching
+			normalizedPattern := strings.TrimSuffix(excludePattern, "/")
+			// Check for exact match OR if the file is within an excluded directory
+			if file == normalizedPattern || strings.HasPrefix(file, normalizedPattern+"/") {
+				excluded = true
+				break // An exclusion match was found
+			}
+		}
 
-		// If excluded, skip this file
 		if excluded {
 			continue
 		}
