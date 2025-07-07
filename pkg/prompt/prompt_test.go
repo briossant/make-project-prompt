@@ -111,7 +111,7 @@ func TestGenerator_Generate(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create generator
-			generator := NewGenerator(fileInfos, tc.question)
+			generator := NewGenerator(fileInfos, tc.question, false)
 
 			// Set custom max file size if specified
 			if tc.maxFileSize > 0 {

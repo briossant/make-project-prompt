@@ -16,7 +16,11 @@ This allows you to provide rich and precise context to the LLM for questions reg
     *   Force include files/folders regardless of type or size (`-f` option).
     *   Automatically excludes binary files (based on MIME type).
     *   Excludes common directories like `.git`, `node_modules`, etc. from the `tree` output for clarity.
-*   **Easy Integration:** Copies the generated prompt directly to the clipboard.
+*   **Flexible Output Options:**
+    *   Copies the generated prompt directly to the clipboard (default).
+    *   Write to a file with the `--output` option.
+    *   Output directly to stdout with the `--stdout` option.
+    *   Suppress non-essential output with the `--quiet` option for easier scripting and automation.
 *   **Flexible Question Input:** 
     *   Specify the question directly via the `-q` option.
     *   Use content from your clipboard via the `-c` option.
