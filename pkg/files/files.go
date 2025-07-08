@@ -28,19 +28,18 @@ type Config struct {
 	ForceIncludePatterns []string
 }
 
-// ListGitFiles returns a list of files tracked by Git, filtered by the provided patterns
+// ListGitFiles returns a list of files tracked by Git.
+// It is now much simpler. It only gets the list, it does not filter it.
 func ListGitFiles(config Config) ([]FileInfo, error) {
-	// Build git ls-files command
+	// Base command
 	args := []string{"ls-files", "-co", "--exclude-standard"}
 
-	// If we have force include patterns, also include ignored files
+	// If we need to consider ignored files (for -f patterns), add the flag.
 	if len(config.ForceIncludePatterns) > 0 {
-		// Add the --ignored flag to include files that are in .gitignore
 		args = append(args, "--ignored")
 	}
 
 	// Add -- separator to get all files
-	// We will handle all filtering in Go
 	args = append(args, "--")
 
 	// Run the git command to get all files
@@ -83,14 +82,14 @@ func ListGitFiles(config Config) ([]FileInfo, error) {
 		}
 	}
 
-	// Apply filtering
-	return filterFiles(fileList, config)
+	// The ALL-IMPORTANT change: We now pass the full list to our pure filter function.
+	return filterAndEnrichFiles(fileList, config)
 }
 
-// filterFiles applies include, exclude, and force include patterns to the file list
+// filterAndEnrichFiles applies include, exclude, and force include patterns to the file list
 // Note: The patterns are now treated as literal file paths, not glob patterns
 // as bash is expected to expand the globs before passing them to the program
-func filterFiles(files []string, config Config) ([]FileInfo, error) {
+func filterAndEnrichFiles(files []string, config Config) ([]FileInfo, error) {
 	var result []FileInfo
 
 	// Convert include/force patterns to maps for O(1) lookup
@@ -104,27 +103,32 @@ func filterFiles(files []string, config Config) ([]FileInfo, error) {
 		forceIncludePatterns[pattern] = true
 	}
 
+	// This is the new, correct filtering logic
+	hasIncludeFilters := len(config.IncludePatterns) > 0
+	hasForceIncludeFilters := len(config.ForceIncludePatterns) > 0
+
 	for _, file := range files {
-		// A file is only considered for inclusion if it matches a pattern,
-		// OR if no patterns were specified at all.
-		included := false
-		if len(includePatterns) == 0 && len(forceIncludePatterns) == 0 {
-			included = true // Default to including everything if no patterns are given.
+		// A file is included if:
+		// 1. It's force included, OR
+		// 2. It matches an include pattern (if include patterns exist), OR
+		// 3. No include patterns AND no force include patterns exist (default include all)
+		isIncluded := false
+		isForced := forceIncludePatterns[file]
+
+		if isForced {
+			isIncluded = true
+		} else if hasIncludeFilters {
+			// If -i flags exist, a file must match one of them.
+			if includePatterns[file] {
+				isIncluded = true
+			}
+		} else if !hasForceIncludeFilters {
+			// If NO -i and NO -f flags are given, include everything by default.
+			isIncluded = true
 		}
 
-		if includePatterns[file] {
-			included = true
-		}
-
-		// Check if file should be force included
-		forced := false
-		if forceIncludePatterns[file] {
-			included = true
-			forced = true
-		}
-
-		// If not included or forced, skip this file
-		if !included {
+		// If not included, skip this file
+		if !isIncluded {
 			continue
 		}
 
@@ -155,13 +159,13 @@ func filterFiles(files []string, config Config) ([]FileInfo, error) {
 		// Create FileInfo struct
 		info := FileInfo{
 			Path:      file,
-			IsForced:  forced,
+			IsForced:  isForced,
 			Size:      fileInfo.Size(),
 			IsRegular: fileInfo.Mode().IsRegular(),
 		}
 
 		// Only check if it's a text file if it's not force included
-		if !forced {
+		if !isForced {
 			info.IsText = IsTextFile(file)
 			// Skip non-text files unless forced
 			if !info.IsText {
