@@ -8,11 +8,11 @@ This project has two test suites. You must understand which to use and when.
 
 *   **Unit Tests (`pkg/`)**: These test individual functions and components in isolation. They are fast and focused.
     *   **When to use:** When you add or change a function in a `pkg/` package (e.g., a function in `pkg/files/files.go`).
-    *   **How to run all:** `go test -v ./...`
+    *   **How to run all:** `nix run .#test` (runs both unit and functional tests)
 
 *   **Functional Tests (`test/functional/`)**: These test the entire application from end-to-end, simulating how a user would run it from the command line. They are slower but test the full integration of all components.
     *   **When to use:** When you add or change a CLI flag, modify the final prompt output, or alter any other user-facing behavior.
-    *   **How to run:** `go test -v ./test/functional/...`
+    *   **How to run:** `nix run .#test` (runs both unit and functional tests)
 
 **The Golden Rule: Write a Failing Test First**
 
@@ -21,7 +21,7 @@ This is our non-negotiable workflow for any code change:
 1.  **Choose the right test type:** Is this an isolated function (Unit) or a user-facing change (Functional)? Often, you may need to add both.
 2.  **Write a failing test:** Add a test case that proves the new feature works or that a bug exists. Run it to confirm it fails as expected.
 3.  **Write code to pass the test:** Implement the simplest, cleanest code required to make the test pass.
-4.  **Run all tests:** After your change, run the *entire* test suite (`go test -v ./...`) to ensure you haven't introduced any regressions.
+4.  **Run all tests:** After your change, run the *entire* test suite (`nix run .#test`) to ensure you haven't introduced any regressions.
 
 ### 2. Documentation is Not an Afterthought
 
