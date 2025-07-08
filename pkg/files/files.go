@@ -39,18 +39,11 @@ func ListGitFiles(config Config) ([]FileInfo, error) {
 		args = append(args, "--ignored")
 	}
 
-	// Add -- separator and include patterns
+	// Add -- separator to get all files
+	// We will handle all filtering in Go
 	args = append(args, "--")
-	if len(config.IncludePatterns) > 0 || len(config.ForceIncludePatterns) > 0 {
-		// If we have include patterns, use them
-		allIncludePatterns := append([]string{}, config.IncludePatterns...)
-		allIncludePatterns = append(allIncludePatterns, config.ForceIncludePatterns...)
-		args = append(args, allIncludePatterns...)
-	} else {
-		// Default to all files if no include patterns specified
-		args = append(args, "*")
-	}
 
+	// Run the git command to get all files
 	cmd := exec.Command("git", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -64,11 +57,31 @@ func ListGitFiles(config Config) ([]FileInfo, error) {
 	}
 
 	output := strings.TrimSpace(stdout.String())
-	if output == "" {
-		return []FileInfo{}, nil
+	var fileList []string
+	if output != "" {
+		fileList = strings.Split(output, "\n")
 	}
 
-	fileList := strings.Split(output, "\n")
+	// If we have force include patterns, we need to make sure those files exist
+	// even if they're not returned by git ls-files
+	if len(config.ForceIncludePatterns) > 0 {
+		for _, pattern := range config.ForceIncludePatterns {
+			// Check if the file exists on disk
+			if _, err := os.Stat(pattern); err == nil {
+				// Check if it's already in the list
+				found := false
+				for _, file := range fileList {
+					if file == pattern {
+						found = true
+						break
+					}
+				}
+				if !found {
+					fileList = append(fileList, pattern)
+				}
+			}
+		}
+	}
 
 	// Apply filtering
 	return filterFiles(fileList, config)
@@ -92,8 +105,13 @@ func filterFiles(files []string, config Config) ([]FileInfo, error) {
 	}
 
 	for _, file := range files {
-		// Check if file should be included
-		included := len(includePatterns) == 0 // If no include patterns, include all files
+		// A file is only considered for inclusion if it matches a pattern,
+		// OR if no patterns were specified at all.
+		included := false
+		if len(includePatterns) == 0 && len(forceIncludePatterns) == 0 {
+			included = true // Default to including everything if no patterns are given.
+		}
+
 		if includePatterns[file] {
 			included = true
 		}

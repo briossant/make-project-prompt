@@ -107,6 +107,21 @@ func TestListGitFiles_Hermetic(t *testing.T) {
 			},
 			expectedForcedFiles: map[string]bool{"binary_file.bin": true},
 		},
+		{
+			name: "Force include markdown files",
+			config: Config{
+				ForceIncludePatterns: []string{"docs/README.md", "docs/CONTRIBUTING.md"},
+			},
+			// Only the forced files should be returned
+			expectedFiles: map[string]bool{
+				"docs/README.md":       true,
+				"docs/CONTRIBUTING.md": true,
+			},
+			expectedForcedFiles: map[string]bool{
+				"docs/README.md":       true,
+				"docs/CONTRIBUTING.md": true,
+			},
+		},
 	}
 
 	for _, tc := range testCases {
