@@ -1,0 +1,44 @@
+# .github/workflows/release.yml
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'r-*' # Trigger this workflow when a tag like r-1, r-22, etc. is pushed
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # This permission is required to create a release and upload assets
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Build cross-platform binaries
+        run: |
+          # Create a directory to store release assets
+          mkdir -p release
+          # Build for Linux (amd64)
+          GOOS=linux GOARCH=amd64 go build -o release/make-project-prompt-linux-amd64 ./cmd/make-project-prompt
+          # Build for macOS (Intel)
+          GOOS=darwin GOARCH=amd64 go build -o release/make-project-prompt-darwin-amd64 ./cmd/make-project-prompt
+          # Build for macOS (Apple Silicon)
+          GOOS=darwin GOARCH=arm64 go build -o release/make-project-prompt-darwin-arm64 ./cmd/make-project-prompt
+          # Build for Windows (amd64)
+          GOOS=windows GOARCH=amd64 go build -o release/make-project-prompt-windows-amd64.exe ./cmd/make-project-prompt
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          # This will create a release and upload all files from the 'release' directory
+          files: |
+            release/*
