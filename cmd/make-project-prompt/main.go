@@ -42,37 +42,41 @@ func (m *multiStringFlag) Set(value string) error {
 
 // Initialize flags
 func init() {
-	flag.Var(&includePatterns, "i", "File path to INCLUDE. Glob patterns are expanded by your shell before being passed to this program. Can be used multiple times.")
-	flag.Var(&excludePatterns, "e", "File path to EXCLUDE. Glob patterns are expanded by your shell before being passed to this program. Can be used multiple times.")
-	flag.Var(&forceIncludePatterns, "f", "File path to FORCE INCLUDE, bypassing file type and size checks. Glob patterns are expanded by your shell before being passed to this program. Can be used multiple times.")
+	flag.Var(&includePatterns, "i", "Pattern (glob) to INCLUDE files/folders (default: '*' if no -i is provided).\n                 Can be used multiple times (e.g., -i 'src/*' -i '*.py').")
+	flag.Var(&excludePatterns, "e", "Pattern (glob) to EXCLUDE files/folders (e.g., -e '*.log' -e 'tests/data/*').\n                 Can be used multiple times.")
+	flag.Var(&forceIncludePatterns, "f", "Pattern (glob) to FORCE INCLUDE files/folders, bypassing file type and size checks.\n                 Can be used multiple times (e.g., -f 'assets/*.bin' -f 'data/*.dat').")
 	flag.StringVar(&question, "q", "[YOUR QUESTION HERE]", "Specifies the question for the LLM.")
 	flag.BoolVar(&useClipboard, "c", false, "Use clipboard content as the question for the LLM.")
 	flag.StringVar(&questionFile, "qf", "", "Path to a file containing the question for the LLM.")
-	flag.StringVar(&outputFile, "output", "", "Write prompt to a file instead of the clipboard (for testing).")
+	flag.StringVar(&outputFile, "output", "", "Write prompt to a file instead of the clipboard.")
 	flag.BoolVar(&useStdout, "stdout", false, "Write prompt to stdout instead of the clipboard.")
 	flag.BoolVar(&quietMode, "quiet", false, "Suppress all non-essential output. Useful with --stdout or --output for scripting.")
 	flag.BoolVar(&dryRun, "dry-run", false, "Perform a dry run. Lists the files that would be included in the prompt without generating it.")
-	flag.BoolVar(&showHelp, "h", false, "Displays help message.")
+	flag.BoolVar(&showHelp, "h", false, "Displays this help message.")
 
 	// Override usage message
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [-i <file_path>] [-e <file_path>] [-f <file_path>] [-q \"question\"] [-c] [-qf file] [--stdout] [--quiet] [--dry-run] [--output file] [-h]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [-i <include_pattern>] [-e <exclude_pattern>] [-f <force_include_pattern>] [-q \"question\"] [-c] [-qf file] [--stdout] [--quiet] [--dry-run] [--output file] [-h]\n\n", os.Args[0])
 		fmt.Fprintln(os.Stderr, "Options:")
-		flag.PrintDefaults()
+		// Custom print defaults to match README style
+		fmt.Fprintf(os.Stderr, "  -i <pattern> : %s\n", flag.Lookup("i").Usage)
+		fmt.Fprintf(os.Stderr, "  -e <pattern> : %s\n", flag.Lookup("e").Usage)
+		fmt.Fprintf(os.Stderr, "  -f <pattern> : %s\n", flag.Lookup("f").Usage)
+		fmt.Fprintf(os.Stderr, "  -q \"question\" : %s\n", flag.Lookup("q").Usage)
+		fmt.Fprintf(os.Stderr, "  -c            : %s\n", flag.Lookup("c").Usage)
+		fmt.Fprintf(os.Stderr, "  -qf <file>    : %s\n", flag.Lookup("qf").Usage)
+		fmt.Fprintf(os.Stderr, "  --stdout      : %s\n", flag.Lookup("stdout").Usage)
+		fmt.Fprintf(os.Stderr, "  --quiet       : %s\n", flag.Lookup("quiet").Usage)
+		fmt.Fprintf(os.Stderr, "  --dry-run     : %s\n", flag.Lookup("dry-run").Usage)
+		fmt.Fprintf(os.Stderr, "  --output <file> : %s\n", flag.Lookup("output").Usage)
+		fmt.Fprintf(os.Stderr, "  -h            : %s\n", flag.Lookup("h").Usage)
+
 		fmt.Fprintln(os.Stderr, "\nNote: If multiple question input methods (-q, -c, -qf) are provided, the last one in the command line takes precedence.")
-		fmt.Fprintln(os.Stderr, "\nOutput options:")
-		fmt.Fprintln(os.Stderr, "  By default, the prompt is copied to the clipboard.")
-		fmt.Fprintln(os.Stderr, "  --output <file>: Write prompt to a file instead of the clipboard.")
-		fmt.Fprintln(os.Stderr, "  --stdout: Write prompt to stdout instead of the clipboard.")
-		fmt.Fprintln(os.Stderr, "  --quiet: Suppress all non-essential output. Useful with --stdout or --output for scripting.")
-		fmt.Fprintln(os.Stderr, "  --dry-run: Perform a dry run. Lists the files that would be included in the prompt without generating it.")
-		fmt.Fprintln(os.Stderr, "\nExamples (with shell glob expansion):")
-		fmt.Fprintln(os.Stderr, "  make-project-prompt -i src/**/*.js -e **/__tests__/* -q \"Refactor this React code to use Hooks.\"")
-		fmt.Fprintln(os.Stderr, "  make-project-prompt -i *.go -f assets/*.bin -c")
-		fmt.Fprintln(os.Stderr, "  make-project-prompt -i *.py -qf question.txt  # Read question from file")
-		fmt.Fprintln(os.Stderr, "  make-project-prompt -i *.py -q \"Initial question\" -c  # Clipboard content will be used (last option wins)")
-		fmt.Fprintln(os.Stderr, "  make-project-prompt -i *.py -q \"Question\" --stdout --quiet  # Output only the prompt to stdout")
-		fmt.Fprintln(os.Stderr, "\nNote: Glob patterns (like *.go) are expanded by your shell before being passed to this program.")
+		fmt.Fprintln(os.Stderr, "\nExamples:")
+		fmt.Fprintln(os.Stderr, "  make-project-prompt -i 'src/**/*.js' -e '**/__tests__/*' -q \"Refactor this React code to use Hooks.\"")
+		fmt.Fprintln(os.Stderr, "  make-project-prompt -i '*.go' -f 'assets/*.bin' -c")
+		fmt.Fprintln(os.Stderr, "  make-project-prompt -i '*.py' -qf question.txt  # Read question from file")
+		fmt.Fprintln(os.Stderr, "  make-project-prompt -i '*.py' -q \"Initial question\" -c  # Clipboard content will be used (last option wins)")
 	}
 }
 
@@ -234,9 +238,9 @@ func checkDependencies() error {
 	return nil
 }
 
-// printInfo prints informational messages unless quiet mode is enabled
+// printInfo prints informational messages unless quiet mode is enabled or stdout is used
 func printInfo(format string, a ...interface{}) {
-	if !quietMode {
+	if !quietMode && !useStdout {
 		fmt.Printf(format, a...)
 	}
 }
@@ -377,8 +381,9 @@ func main() {
 
 	// Handle output based on flags
 	if useStdout {
-		// Write to stdout
+		// Write to stdout and exit. This is critical for clean scripting output.
 		fmt.Print(prompt)
+		os.Exit(0)
 	} else if outputFile != "" {
 		// Write to file
 		err = os.WriteFile(outputFile, []byte(prompt), 0644)
