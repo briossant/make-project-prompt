@@ -14,7 +14,7 @@
         lib = pkgs.lib;
 
         pname = "make-project-prompt";
-        version = "0.2.1";
+        version = "0.1.0";
 
         runtimeDeps = with pkgs; [
           gitMinimal
