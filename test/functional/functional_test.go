@@ -238,6 +238,37 @@ func TestFunctionalMPP_StdoutOutput(t *testing.T) {
 		}
 	})
 
+	t.Run("Stdout output WITHOUT quiet mode", func(t *testing.T) {
+		// This test verifies that --stdout alone produces ONLY the prompt content
+		// and nothing else, which is crucial for scripting.
+		commandString := fmt.Sprintf(`%s -i src/main/app.go -q "Test stdout without quiet" --stdout`, mppBinaryPath)
+		cmd := exec.Command("bash", "-c", commandString)
+		cmd.Dir = repoPath
+
+		// Run the command. We expect it to succeed and output the prompt.
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("Command failed: %v\nOutput:\n%s", err, string(output))
+		}
+		outputStr := string(output)
+
+		// Create the expected prompt for comparison.
+		// It should start with the intro, have the project structure, file content, and question.
+		// It should NOT have any of the `printInfo` messages.
+		if !strings.HasPrefix(outputStr, "Here is the context of my current project.") {
+			t.Errorf("Expected output to start with prompt intro, but it did not. Got:\n%s", outputStr)
+		}
+		if !strings.HasSuffix(strings.TrimSpace(outputStr), "Test stdout without quiet") {
+			t.Errorf("Expected output to end with the question, but it did not. Got:\n%s", outputStr)
+		}
+		if strings.Contains(outputStr, "Starting make-project-prompt") {
+			t.Errorf("Expected stdout to NOT contain startup message, but it did.")
+		}
+		if strings.Contains(outputStr, "Prompt generated and") {
+			t.Errorf("Expected stdout to NOT contain success message, but it did.")
+		}
+	})
+
 	t.Run("File output with quiet mode", func(t *testing.T) {
 		outputFile, err := os.CreateTemp("", "mpp-output-*.txt")
 		if err != nil {
