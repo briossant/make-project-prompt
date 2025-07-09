@@ -172,6 +172,7 @@ func TestFunctionalMPP_SuccessCases(t *testing.T) {
 
 			output, err := cmd.CombinedOutput()
 			t.Logf("Command stdout/stderr:\n%s", string(output))
+			fmt.Printf("[DEBUG_LOG] Test %s command output: %s\n", tc.name, string(output))
 			if err != nil {
 				t.Fatalf("Command failed: %v\nOutput:\n%s", err, string(output))
 			}
@@ -181,15 +182,19 @@ func TestFunctionalMPP_SuccessCases(t *testing.T) {
 				t.Fatalf("Failed to read prompt output file: %v", err)
 			}
 			promptContent := string(promptBytes)
+			fmt.Printf("[DEBUG_LOG] Test %s running\n", tc.name)
 
 			for _, expected := range tc.expectedToContain {
 				if !strings.Contains(promptContent, expected) {
 					t.Errorf("Expected prompt to contain:\n---\n%s\n---\n...but it did not.", expected)
+					fmt.Printf("[DEBUG_LOG] Test %s failed: Expected prompt to contain %q but it did not.\n", tc.name, expected)
+					fmt.Printf("[DEBUG_LOG] Prompt content: %s\n", promptContent)
 				}
 			}
 			for _, notExpected := range tc.expectedToNotContain {
 				if strings.Contains(promptContent, notExpected) {
 					t.Errorf("Expected prompt to NOT contain:\n---\n%s\n---\n...but it did.", notExpected)
+					fmt.Printf("[DEBUG_LOG] Test %s failed: Expected prompt to NOT contain %q but it did.\n", tc.name, notExpected)
 				}
 			}
 
@@ -277,6 +282,52 @@ func TestFunctionalMPP_StdoutOutput(t *testing.T) {
 		}
 		if !strings.Contains(promptContent, "Based on the context provided above") {
 			t.Errorf("Expected output file to contain prompt footer, but it did not.")
+		}
+	})
+}
+
+func TestFunctionalMPP_DryRun(t *testing.T) {
+	repoPath := setupTestRepo(t)
+	defer cleanupTestRepo(t, repoPath)
+
+	t.Run("Dry run lists correct files without prompt format", func(t *testing.T) {
+		// Run the command with the --dry-run flag
+		commandString := fmt.Sprintf(`%s -i src/main/*.go --dry-run`, mppBinaryPath)
+		cmd := exec.Command("bash", "-c", commandString)
+		cmd.Dir = repoPath
+
+		output, err := cmd.CombinedOutput()
+		fmt.Printf("[DEBUG_LOG] Dry run test command output: %s\n", string(output))
+		if err != nil {
+			t.Fatalf("Command failed: %v\nOutput:\n%s", err, string(output))
+		}
+
+		outputStr := string(output)
+
+		// Expected files in output
+		expectedToContain := []string{
+			"src/main/app.go",
+			"src/main/utils.go",
+			"Total files: 2",
+		}
+
+		// Parts of the full prompt that should NOT be in the output
+		expectedToNotContain := []string{
+			"--- FILE:",
+			"--- PROJECT STRUCTURE ---",
+			"Based on the context provided above",
+		}
+
+		for _, expected := range expectedToContain {
+			if !strings.Contains(outputStr, expected) {
+				t.Errorf("Expected dry run output to contain %q, but it did not.", expected)
+			}
+		}
+
+		for _, notExpected := range expectedToNotContain {
+			if strings.Contains(outputStr, notExpected) {
+				t.Errorf("Expected dry run output to NOT contain %q, but it did.", notExpected)
+			}
 		}
 	})
 }

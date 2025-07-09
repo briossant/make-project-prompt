@@ -25,6 +25,7 @@ var (
 	useStdout            bool
 	quietMode            bool
 	showHelp             bool
+	dryRun               bool
 )
 
 // multiStringFlag is a custom flag type that can be specified multiple times
@@ -50,11 +51,12 @@ func init() {
 	flag.StringVar(&outputFile, "output", "", "Write prompt to a file instead of the clipboard (for testing).")
 	flag.BoolVar(&useStdout, "stdout", false, "Write prompt to stdout instead of the clipboard.")
 	flag.BoolVar(&quietMode, "quiet", false, "Suppress all non-essential output. Useful with --stdout or --output for scripting.")
+	flag.BoolVar(&dryRun, "dry-run", false, "Perform a dry run. Lists the files that would be included in the prompt without generating it.")
 	flag.BoolVar(&showHelp, "h", false, "Displays help message.")
 
 	// Override usage message
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [-i <file_path>] [-e <file_path>] [-f <file_path>] [-q \"question\"] [-c] [-qf file] [--stdout] [--quiet] [--output file] [-h]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [-i <file_path>] [-e <file_path>] [-f <file_path>] [-q \"question\"] [-c] [-qf file] [--stdout] [--quiet] [--dry-run] [--output file] [-h]\n\n", os.Args[0])
 		fmt.Fprintln(os.Stderr, "Options:")
 		flag.PrintDefaults()
 		fmt.Fprintln(os.Stderr, "\nNote: If multiple question input methods (-q, -c, -qf) are provided, the last one in the command line takes precedence.")
@@ -63,6 +65,7 @@ func init() {
 		fmt.Fprintln(os.Stderr, "  --output <file>: Write prompt to a file instead of the clipboard.")
 		fmt.Fprintln(os.Stderr, "  --stdout: Write prompt to stdout instead of the clipboard.")
 		fmt.Fprintln(os.Stderr, "  --quiet: Suppress all non-essential output. Useful with --stdout or --output for scripting.")
+		fmt.Fprintln(os.Stderr, "  --dry-run: Perform a dry run. Lists the files that would be included in the prompt without generating it.")
 		fmt.Fprintln(os.Stderr, "\nExamples (with shell glob expansion):")
 		fmt.Fprintln(os.Stderr, "  make-project-prompt -i src/**/*.js -e **/__tests__/* -q \"Refactor this React code to use Hooks.\"")
 		fmt.Fprintln(os.Stderr, "  make-project-prompt -i *.go -f assets/*.bin -c")
@@ -152,6 +155,9 @@ func customParseArgs() {
 			} else if currentFlag == "-quiet" || currentFlag == "--quiet" {
 				quietMode = true
 				continue
+			} else if currentFlag == "-dry-run" || currentFlag == "--dry-run" {
+				dryRun = true
+				continue
 			}
 
 			// For flags that take a value, get the next argument
@@ -203,7 +209,7 @@ func checkDependencies() error {
 	}
 
 	// Check for required commands
-	requiredCommands := []string{"git", "tree"}
+	requiredCommands := []string{"git"}
 	missingCommands := []string{}
 	for _, cmdName := range requiredCommands {
 		if _, err := exec.LookPath(cmdName); err != nil {
@@ -216,10 +222,12 @@ func checkDependencies() error {
 	}
 
 	// Check for optional commands
-	optionalCommands := []string{"file"}
+	optionalCommands := []string{"file", "tree"}
 	for _, cmdName := range optionalCommands {
 		if _, err := exec.LookPath(cmdName); err != nil {
 			printInfo("Warning: Optional command '%s' not found. Some features may not work correctly.\n", cmdName)
+			// Set an environment variable to indicate that the command is not available
+			os.Setenv("MPP_NO_"+strings.ToUpper(cmdName), "1")
 		}
 	}
 
@@ -335,6 +343,31 @@ func main() {
 		printInfo("Force inclusion patterns: %v\n", forceIncludePatterns)
 	}
 	printInfo("Question: %s\n", question)
+
+	// If dry-run is requested, list files and exit.
+	if dryRun {
+		printInfo("--- Performing a dry run ---\n")
+		fileConfig := files.Config{
+			IncludePatterns:      includePatterns,
+			ExcludePatterns:      excludePatterns,
+			ForceIncludePatterns: forceIncludePatterns,
+		}
+		fileInfos, err := files.ListGitFiles(fileConfig)
+		if err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+
+		if len(fileInfos) == 0 {
+			log.Fatalf("Dry run: No files would be included with the current filters.")
+		}
+
+		fmt.Println("The following files would be included in the prompt:")
+		for _, info := range fileInfos {
+			fmt.Println("- " + info.Path)
+		}
+		fmt.Printf("\nTotal files: %d\n", len(fileInfos))
+		os.Exit(0) // Exit successfully after the dry run
+	}
 
 	// Process files and generate prompt
 	prompt, fileCount, err := processFilesAndGeneratePrompt()

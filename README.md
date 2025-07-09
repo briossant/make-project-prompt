@@ -21,6 +21,7 @@ This allows you to provide rich and precise context to the LLM for questions reg
     *   Write to a file with the `--output` option.
     *   Output directly to stdout with the `--stdout` option.
     *   Suppress non-essential output with the `--quiet` option for easier scripting and automation.
+    *   Perform a dry run with the `--dry-run` option to see which files would be included without generating the prompt.
 *   **Flexible Question Input:** 
     *   Specify the question directly via the `-q` option.
     *   Use content from your clipboard via the `-c` option.
@@ -182,7 +183,7 @@ After rebuilding (`nixos-rebuild switch` or `home-manager switch`), the commands
 ## Command Options
 
 ```bash
-Usage: make-project-prompt [-i <include_pattern>] [-e <exclude_pattern>] [-f <force_include_pattern>] [-q "question"] [-c] [-qf file] [-h]
+Usage: make-project-prompt [-i <include_pattern>] [-e <exclude_pattern>] [-f <force_include_pattern>] [-q "question"] [-c] [-qf file] [--stdout] [--quiet] [--dry-run] [--output file] [-h]
 
 Options:
   -i <pattern> : Pattern (glob) to INCLUDE files/folders (default: '*' if no -i is provided).
@@ -194,6 +195,10 @@ Options:
   -q "question" : Specifies the question for the LLM.
   -c            : Use clipboard content as the question for the LLM.
   -qf <file>    : Path to a file containing the question for the LLM.
+  --stdout      : Write prompt to stdout instead of the clipboard.
+  --quiet       : Suppress all non-essential output. Useful with --stdout or --output for scripting.
+  --dry-run     : Perform a dry run. Lists the files that would be included in the prompt without generating it.
+  --output <file> : Write prompt to a file instead of the clipboard.
   -h            : Displays this help message.
 
 Note: If multiple question input methods (-q, -c, -qf) are provided, the last one in the command line takes precedence.
@@ -230,6 +235,9 @@ mpp -i '*.go' -qf path/to/question.txt
 
 # Generate a prompt with multiple question input methods (clipboard content will be used)
 mpp -q "This question will be overridden" -c
+
+# Perform a dry run to see which files would be included without generating the prompt
+mpp -i '*.go' --dry-run
 ```
 
 ## Development
