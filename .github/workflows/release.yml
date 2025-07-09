@@ -5,7 +5,7 @@ name: Release
 on:
   push:
     tags:
-      - 'r-*' # Trigger this workflow when a tag like r-1, r-22, etc. is pushed
+      - 'v[0-9]+.[0-9]+.[0-9]+' # Trigger on SemVer tags like v0.3.0, v1.10.2, etc.
 
 jobs:
   release:

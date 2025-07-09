@@ -41,43 +41,6 @@ For Nix users:
 *   **Nix:** You must have [Nix installed](https://nixos.org/download.html) on your system.
 *   **Flakes:** The [Nix Flakes](https://nixos.wiki/wiki/Flakes) feature must be enabled (this is often the case by default on recent installations; otherwise, follow the instructions in the Nix documentation).
 
-## Testing
-
-The project includes both unit tests and functional tests:
-
-### Unit Tests
-
-Unit tests are located alongside the code they test, following Go conventions. They test individual components of the application.
-
-To run the unit tests:
-
-```bash
-go test -v ./...
-```
-
-### Functional Tests
-
-Functional tests are located in the `test/functional` directory. They test the entire application workflow from end to end, using a template Git repository created in `/tmp`.
-
-The functional tests include:
-
-1. **Go tests** (`test/functional/functional_test.go`): Test the basic functionality of the application.
-2. **Bash tests** (`test/functional/run_clipboard_tests.sh`): Test the clipboard functionality using `xsel`.
-
-To run the Go functional tests:
-
-```bash
-go test -v ./test/functional/...
-```
-
-To run the bash functional tests:
-
-```bash
-./test/functional/run_clipboard_tests.sh
-```
-
-Note: The bash functional tests require `xsel` to be installed.
-
 ## Installation and Usage
 
 ### Go Installation
@@ -85,7 +48,7 @@ Note: The bash functional tests require `xsel` to be installed.
 If you have Go installed, you can install the tool directly:
 
 ```bash
-go install github.com/briossant/make-project-prompt@latest
+go install github.com/briossant/make-project-prompt/cmd/make-project-prompt@latest
 ```
 
 This will install the `make-project-prompt` command in your `$GOPATH/bin` directory.
