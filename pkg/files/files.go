@@ -86,50 +86,80 @@ func ListGitFiles(config Config) ([]FileInfo, error) {
 	return filterAndEnrichFiles(fileList, config)
 }
 
-// matchesPattern checks if a file path matches a pattern (supports glob patterns)
+// matchesPattern checks if a file path matches a pattern (supports glob patterns including **)
 func matchesPattern(file, pattern string) bool {
 	// First try exact match
 	if file == pattern {
 		return true
 	}
-	// Then try filepath.Match for glob patterns
+
+	// Handle ** patterns for recursive directory matching
+	if strings.Contains(pattern, "**") {
+		return matchesRecursivePattern(file, pattern)
+	}
+
+	// For simple patterns without **, use filepath.Match
 	matched, err := filepath.Match(pattern, file)
+	if err != nil {
+		// Log error to stderr but don't fail the match
+		fmt.Fprintf(os.Stderr, "Warning: Invalid pattern %q: %v\n", pattern, err)
+		return false
+	}
+	return matched
+}
+
+// matchesRecursivePattern handles patterns with ** (recursive directory matching)
+// It properly handles multiple ** segments in a pattern
+func matchesRecursivePattern(file, pattern string) bool {
+	// Split pattern by /** to handle patterns like "src/**/*.go"
+	// This handles the most common case: prefix/**/suffix
+	parts := strings.Split(pattern, "**")
+
+	// Get prefix (before first **)
+	prefix := parts[0]
+	prefix = strings.TrimSuffix(prefix, "/")
+
+	// Check if file starts with prefix
+	if prefix != "" {
+		if !strings.HasPrefix(file, prefix) {
+			return false
+		}
+		// Remove prefix from file for further matching
+		if len(file) > len(prefix) && file[len(prefix)] == '/' {
+			file = file[len(prefix)+1:]
+		} else if len(file) == len(prefix) {
+			file = ""
+		} else {
+			return false
+		}
+	}
+
+	// Get suffix (after last **)
+	suffix := parts[len(parts)-1]
+	suffix = strings.TrimPrefix(suffix, "/")
+
+	// If no suffix, pattern ends with **, match everything
+	if suffix == "" {
+		return true
+	}
+
+	// Try to match suffix against the remaining path or any sub-path
+	// This allows ** to match zero or more directory levels
+	matched, err := filepath.Match(suffix, file)
 	if err == nil && matched {
 		return true
 	}
-	// Handle ** patterns by checking if any part of the path matches
-	// This is a simplified implementation for common cases
-	if strings.Contains(pattern, "**") {
-		// Convert ** pattern to a regex-like check
-		// For example: src/**/*.go should match src/main/app.go
-		parts := strings.Split(pattern, "**")
-		if len(parts) == 2 {
-			prefix := parts[0]
-			suffix := parts[1]
-			// Remove leading slash from suffix if present
-			suffix = strings.TrimPrefix(suffix, "/")
 
-			if strings.HasPrefix(file, prefix) {
-				// Check if the remaining part matches the suffix pattern
-				remaining := strings.TrimPrefix(file, prefix)
-				remaining = strings.TrimPrefix(remaining, "/")
-				// Try to match the suffix as a glob
-				matched, err := filepath.Match(suffix, remaining)
-				if err == nil && matched {
-					return true
-				}
-				// Also try matching against deeper paths
-				pathParts := strings.Split(remaining, "/")
-				for i := range pathParts {
-					subPath := strings.Join(pathParts[i:], "/")
-					matched, err := filepath.Match(suffix, subPath)
-					if err == nil && matched {
-						return true
-					}
-				}
-			}
+	// Check all sub-paths
+	pathParts := strings.Split(file, "/")
+	for i := range pathParts {
+		subPath := strings.Join(pathParts[i:], "/")
+		matched, err := filepath.Match(suffix, subPath)
+		if err == nil && matched {
+			return true
 		}
 	}
+
 	return false
 }
 
