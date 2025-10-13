@@ -27,6 +27,15 @@ This allows you to provide rich and precise context to the LLM for questions reg
     *   Use content from your clipboard via the `-c` option.
     *   Read question from a file via the `-qf` option.
     *   Multiple input methods supported with "last one wins" precedence.
+*   **Custom Prompt Messages:**
+    *   Add a role message before files with `--role-message` (e.g., "You are an expert developer").
+    *   Add extra context before the question with `--extra-context`.
+    *   Add final words at the end of the prompt with `--last-words`.
+*   **Alias System:**
+    *   Define reusable command aliases in `.mpp.txt` configuration files.
+    *   Aliases are loaded recursively from the current directory up to the root.
+    *   Use aliases with the `-a` flag to avoid repetitive typing.
+    *   List all available aliases with `--list-aliases`.
 *   **Cross-Platform:** Written in Go for better performance and cross-platform compatibility.
 *   **Packaged with Nix Flakes:** Easy to run, install, and integrate into Nix/NixOS environments.
 
@@ -146,11 +155,12 @@ After rebuilding (`nixos-rebuild switch` or `home-manager switch`), the commands
 ## Command Options
 
 ```bash
-Usage: make-project-prompt [-i <include_pattern>] [-e <exclude_pattern>] [-f <force_include_pattern>] [-q "question"] [-c] [-qf file] [--stdout] [--quiet] [--dry-run] [--output file] [-h]
+Usage: make-project-prompt [-i <include_pattern>] [-e <exclude_pattern>] [-f <force_include_pattern>] [-q "question"] [-c] [-qf file] [--role-message "msg"] [--extra-context "msg"] [--last-words "msg"] [-a "alias"] [--list-aliases] [--stdout] [--quiet] [--dry-run] [--output file] [-h]
 
 Options:
   -i <pattern> : Pattern (glob) to INCLUDE files/folders (default: '*' if no -i is provided).
                  Can be used multiple times (e.g., -i 'src/*' -i '*.py').
+                 Supports glob patterns including ** for recursive matching.
   -e <pattern> : Pattern (glob) to EXCLUDE files/folders (e.g., -e '*.log' -e 'tests/data/*').
                  Can be used multiple times.
   -f <pattern> : Pattern (glob) to FORCE INCLUDE files/folders, bypassing file type and size checks.
@@ -158,6 +168,11 @@ Options:
   -q "question" : Specifies the question for the LLM.
   -c            : Use clipboard content as the question for the LLM.
   -qf <file>    : Path to a file containing the question for the LLM.
+  --role-message "msg" : Pre-prompt message placed before all files (e.g., "You are a Go expert").
+  --extra-context "msg" : Pre-prompt message placed before the question.
+  --last-words "msg" : Post-prompt message placed at the end of the whole message.
+  -a "alias"    : Use a predefined alias from config files (.mpp.txt).
+  --list-aliases : List all available aliases from config files.
   --stdout      : Write prompt to stdout instead of the clipboard.
   --quiet       : Suppress all non-essential output. Useful with --stdout or --output for scripting.
   --dry-run     : Perform a dry run. Lists the files that would be included in the prompt without generating it.
@@ -165,13 +180,55 @@ Options:
   -h            : Displays this help message.
 
 Note: If multiple question input methods (-q, -c, -qf) are provided, the last one in the command line takes precedence.
+      For non-combining options (all except -i, -e, -f), the last occurrence takes precedence.
 
 Examples:
   make-project-prompt -i 'src/**/*.js' -e '**/__tests__/*' -q "Refactor this React code to use Hooks."
   make-project-prompt -i '*.go' -f 'assets/*.bin' -c
   make-project-prompt -i '*.py' -qf question.txt  # Read question from file
   make-project-prompt -i '*.py' -q "Initial question" -c  # Clipboard content will be used (last option wins)
+  make-project-prompt --role-message "You are a Python expert" -i '*.py' -q "Review this code"
+  make-project-prompt -a js_dev -q "Review this code"  # Use the js_dev alias
+  make-project-prompt --list-aliases  # List all available aliases
 ```
+
+## Alias Configuration
+
+You can define reusable command aliases in `.mpp.txt` files. These files are loaded recursively from the current directory up to the file system root.
+
+### Configuration File Format
+
+Create a `.mpp.txt` file in your project root or any parent directory:
+
+```
+# Comments start with #
+alias_name: options
+
+# Example aliases
+js_dev: --role-message "You are a JavaScript expert" -i src/**/*.js -e **/__tests__/*
+go_expert: --role-message "You are a Go expert" -i **/*.go -e **/*_test.go
+python_review: -i **/*.py --extra-context "Focus on code quality and best practices"
+quick_readme: -i README.md -i CONTRIBUTING.md -q "Summarize this project"
+```
+
+### Using Aliases
+
+```bash
+# Use an alias
+mpp -a js_dev -q "Review this code"
+
+# List all available aliases
+mpp --list-aliases
+
+# Combine an alias with additional options (options combine or override)
+mpp -a go_expert -i cmd/**/*.go -q "Explain the command structure"
+```
+
+### Alias Precedence
+
+*   Config files are loaded from the current directory up to the root.
+*   If the same alias name appears in multiple config files, the first one encountered (closest to current directory) takes precedence.
+*   A warning is displayed when duplicate aliases are found.
 
 ## Usage Examples
 
@@ -201,6 +258,12 @@ mpp -q "This question will be overridden" -c
 
 # Perform a dry run to see which files would be included without generating the prompt
 mpp -i '*.go' --dry-run
+
+# Use custom prompt messages
+mpp -i '*.py' --role-message "You are a Python expert" --extra-context "Focus on performance" -q "Review this code"
+
+# Use an alias for common workflows
+mpp -a python_review -q "Check for potential bugs"
 ```
 
 ## Development

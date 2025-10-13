@@ -163,7 +163,7 @@ func expandAliasesInArgs(args []string) ([]string, error) {
 	var expanded []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		
+
 		// Check if this is the -a or --a flag
 		if arg == "-a" || arg == "--a" {
 			// Get the alias name from next argument
@@ -172,13 +172,13 @@ func expandAliasesInArgs(args []string) ([]string, error) {
 			}
 			i++
 			aliasName := args[i]
-			
+
 			// Look up the alias
 			alias, exists := cfg.GetAlias(aliasName)
 			if !exists {
 				return nil, fmt.Errorf("alias '%s' not found", aliasName)
 			}
-			
+
 			// Expand the alias options
 			aliasArgs := config.ExpandAlias(alias.Options)
 			expanded = append(expanded, aliasArgs...)
@@ -187,7 +187,7 @@ func expandAliasesInArgs(args []string) ([]string, error) {
 			expanded = append(expanded, arg)
 		}
 	}
-	
+
 	return expanded, nil
 }
 
@@ -339,13 +339,13 @@ func main() {
 		if err != nil {
 			log.Fatalf("Error loading aliases: %v", err)
 		}
-		
+
 		aliases := cfg.ListAliases()
 		if len(aliases) == 0 {
 			fmt.Println("No aliases found in .mpp.txt config files.")
 			os.Exit(0)
 		}
-		
+
 		fmt.Println("Available aliases:")
 		for _, alias := range aliases {
 			fmt.Printf("  %s: %s\n", alias.Name, alias.Options)
@@ -359,7 +359,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error expanding aliases: %v", err)
 	}
-	
+
 	// Replace os.Args with expanded arguments for parsing
 	os.Args = append([]string{os.Args[0]}, expandedArgs...)
 

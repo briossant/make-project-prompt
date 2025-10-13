@@ -24,8 +24,8 @@ type Generator struct {
 // NewGenerator creates a new prompt generator
 func NewGenerator(fileInfos []files.FileInfo, question string, quietMode bool) *Generator {
 	return &Generator{
-		Files:      fileInfos,
-		Question:   question,
+		Files:       fileInfos,
+		Question:    question,
 		MaxFileSize: 1048576, // 1MB default max file size
 		QuietMode:   quietMode,
 	}

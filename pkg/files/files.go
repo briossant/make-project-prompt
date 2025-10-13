@@ -86,22 +86,57 @@ func ListGitFiles(config Config) ([]FileInfo, error) {
 	return filterAndEnrichFiles(fileList, config)
 }
 
+// matchesPattern checks if a file path matches a pattern (supports glob patterns)
+func matchesPattern(file, pattern string) bool {
+	// First try exact match
+	if file == pattern {
+		return true
+	}
+	// Then try filepath.Match for glob patterns
+	matched, err := filepath.Match(pattern, file)
+	if err == nil && matched {
+		return true
+	}
+	// Handle ** patterns by checking if any part of the path matches
+	// This is a simplified implementation for common cases
+	if strings.Contains(pattern, "**") {
+		// Convert ** pattern to a regex-like check
+		// For example: src/**/*.go should match src/main/app.go
+		parts := strings.Split(pattern, "**")
+		if len(parts) == 2 {
+			prefix := parts[0]
+			suffix := parts[1]
+			// Remove leading slash from suffix if present
+			suffix = strings.TrimPrefix(suffix, "/")
+
+			if strings.HasPrefix(file, prefix) {
+				// Check if the remaining part matches the suffix pattern
+				remaining := strings.TrimPrefix(file, prefix)
+				remaining = strings.TrimPrefix(remaining, "/")
+				// Try to match the suffix as a glob
+				matched, err := filepath.Match(suffix, remaining)
+				if err == nil && matched {
+					return true
+				}
+				// Also try matching against deeper paths
+				pathParts := strings.Split(remaining, "/")
+				for i := range pathParts {
+					subPath := strings.Join(pathParts[i:], "/")
+					matched, err := filepath.Match(suffix, subPath)
+					if err == nil && matched {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
 // filterAndEnrichFiles applies include, exclude, and force include patterns to the file list
-// Note: The patterns are now treated as literal file paths, not glob patterns
-// as bash is expected to expand the globs before passing them to the program
+// Note: Patterns support glob matching including ** for recursive directory matching
 func filterAndEnrichFiles(files []string, config Config) ([]FileInfo, error) {
 	var result []FileInfo
-
-	// Convert include/force patterns to maps for O(1) lookup
-	includePatterns := make(map[string]bool)
-	for _, pattern := range config.IncludePatterns {
-		includePatterns[pattern] = true
-	}
-
-	forceIncludePatterns := make(map[string]bool)
-	for _, pattern := range config.ForceIncludePatterns {
-		forceIncludePatterns[pattern] = true
-	}
 
 	// This is the new, correct filtering logic
 	hasIncludeFilters := len(config.IncludePatterns) > 0
@@ -113,18 +148,30 @@ func filterAndEnrichFiles(files []string, config Config) ([]FileInfo, error) {
 		// 2. It matches an include pattern (if include patterns exist), OR
 		// 3. No include patterns AND no force include patterns exist (default include all)
 		isIncluded := false
-		isForced := forceIncludePatterns[file]
+		isForced := false
 
-		if isForced {
-			isIncluded = true
-		} else if hasIncludeFilters {
-			// If -i flags exist, a file must match one of them.
-			if includePatterns[file] {
+		// Check force include patterns first
+		for _, pattern := range config.ForceIncludePatterns {
+			if matchesPattern(file, pattern) {
+				isForced = true
+				isIncluded = true
+				break
+			}
+		}
+
+		if !isForced {
+			if hasIncludeFilters {
+				// If -i flags exist, a file must match one of them.
+				for _, pattern := range config.IncludePatterns {
+					if matchesPattern(file, pattern) {
+						isIncluded = true
+						break
+					}
+				}
+			} else if !hasForceIncludeFilters {
+				// If NO -i and NO -f flags are given, include everything by default.
 				isIncluded = true
 			}
-		} else if !hasForceIncludeFilters {
-			// If NO -i and NO -f flags are given, include everything by default.
-			isIncluded = true
 		}
 
 		// If not included, skip this file
@@ -132,20 +179,22 @@ func filterAndEnrichFiles(files []string, config Config) ([]FileInfo, error) {
 			continue
 		}
 
-		// ***MODIFIED LOGIC***: Check for directory exclusion
-		excluded := false
-		for _, excludePattern := range config.ExcludePatterns {
-			// Normalize pattern by removing any trailing slash for consistent matching
-			normalizedPattern := strings.TrimSuffix(excludePattern, "/")
-			// Check for exact match OR if the file is within an excluded directory
-			if file == normalizedPattern || strings.HasPrefix(file, normalizedPattern+"/") {
-				excluded = true
-				break // An exclusion match was found
+		// Check for exclusion (but not if force included)
+		if !isForced {
+			excluded := false
+			for _, excludePattern := range config.ExcludePatterns {
+				// Normalize pattern by removing any trailing slash for consistent matching
+				normalizedPattern := strings.TrimSuffix(excludePattern, "/")
+				// Check for exact match, glob match, OR if the file is within an excluded directory
+				if matchesPattern(file, normalizedPattern) || strings.HasPrefix(file, normalizedPattern+"/") {
+					excluded = true
+					break // An exclusion match was found
+				}
 			}
-		}
 
-		if excluded {
-			continue
+			if excluded {
+				continue
+			}
 		}
 
 		// Get file info

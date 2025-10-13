@@ -43,7 +43,7 @@ func LoadAliases() (*Config, error) {
 	// Walk up the directory tree
 	for {
 		configPath := filepath.Join(currentDir, ".mpp.txt")
-		
+
 		// Check if config file exists
 		if _, err := os.Stat(configPath); err == nil {
 			// Load aliases from this file
