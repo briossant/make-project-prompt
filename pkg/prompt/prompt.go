@@ -12,10 +12,13 @@ import (
 
 // Generator handles prompt generation
 type Generator struct {
-	Files      []files.FileInfo
-	Question   string
-	MaxFileSize int64
-	QuietMode   bool
+	Files        []files.FileInfo
+	Question     string
+	MaxFileSize  int64
+	QuietMode    bool
+	RoleMessage  string
+	ExtraContext string
+	LastWords    string
 }
 
 // NewGenerator creates a new prompt generator
@@ -37,6 +40,11 @@ func (g *Generator) SetMaxFileSize(size int64) {
 func (g *Generator) Generate() (string, int, error) {
 	var promptContent strings.Builder
 	fileCounter := 0
+
+	// Role message (if provided)
+	if g.RoleMessage != "" {
+		promptContent.WriteString(g.RoleMessage + "\n\n")
+	}
 
 	// Introduction
 	promptContent.WriteString("Here is the context of my current project. Analyze the structure and content of the provided files to answer my question.\n\n")
@@ -101,9 +109,19 @@ func (g *Generator) Generate() (string, int, error) {
 
 	promptContent.WriteString("\n--- END OF FILE CONTENT ---\n")
 
+	// Extra context (if provided)
+	if g.ExtraContext != "" {
+		promptContent.WriteString("\n" + g.ExtraContext + "\n")
+	}
+
 	// Final question
 	promptContent.WriteString("\nBased on the context provided above, answer the following question:\n\n")
 	promptContent.WriteString(g.Question + "\n")
+
+	// Last words (if provided)
+	if g.LastWords != "" {
+		promptContent.WriteString("\n" + g.LastWords + "\n")
+	}
 
 	return promptContent.String(), fileCounter, nil
 }

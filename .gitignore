@@ -12,6 +12,7 @@
 *.dylib
 bin/
 dist/
+make-project-prompt
 
 # Go specific
 vendor/

@@ -1,0 +1,4 @@
+# Example aliases for testing
+js_dev: --role-message "You are a JavaScript expert" -i **.js
+go_dev: --role-message "You are a Go expert" -i *.go -e *_test.go
+python: -i *.py --extra-context "Focus on best practices"
