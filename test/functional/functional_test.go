@@ -101,51 +101,51 @@ func TestFunctionalMPP_SuccessCases(t *testing.T) {
 	}{
 		// --- Existing and Refined Tests ---
 		{
-			name: "Default - all tracked text files",
-			args: `-q "Default test"`,
+			name:                 "Default - all tracked text files",
+			args:                 `-q "Default test"`,
 			expectedToContain:    []string{"--- FILE: src/main/app.go ---", "--- FILE: docs/README.md ---", "--- FILE: .gitignore ---"},
 			expectedToNotContain: []string{"--- FILE: binary_file.bin ---", "--- FILE: build/output.txt ---"},
 		},
 		{
-			name: "Include only main go files",
-			args: `-i src/main/app.go -i src/main/utils.go -q "Include Go files"`,
+			name:                 "Include only main go files",
+			args:                 `-i src/main/app.go -i src/main/utils.go -q "Include Go files"`,
 			expectedToContain:    []string{"--- FILE: src/main/app.go ---", "--- FILE: src/main/utils.go ---"},
 			expectedToNotContain: []string{"--- FILE: src/test/app_test.go ---", "--- FILE: docs/README.md ---"},
 		},
 		{
-			name: "Exclude test files",
-			args: `-e src/test/app_test.go -q "Exclude tests"`,
+			name:                 "Exclude test files",
+			args:                 `-e src/test/app_test.go -q "Exclude tests"`,
 			expectedToContain:    []string{"--- FILE: src/main/app.go ---", "--- FILE: docs/README.md ---"},
 			expectedToNotContain: []string{"--- FILE: src/test/app_test.go ---"},
 		},
 		// --- NEW DIRECTORY-FOCUSED TESTS ---
 		{
-			name: "Exclude entire directory with -e src",
-			args: `-q "Exclude src dir" -e src`,
+			name:                 "Exclude entire directory with -e src",
+			args:                 `-q "Exclude src dir" -e src`,
 			expectedToContain:    []string{"--- FILE: docs/README.md ---", "--- FILE: docs/CONTRIBUTING.md ---"},
 			expectedToNotContain: []string{"--- FILE: src/main/app.go ---", "--- FILE: src/test/app_test.go ---"},
 		},
 		{
-			name: "Exclude entire directory with -e src/ (trailing slash)",
-			args: `-q "Exclude src/ dir" -e src/`,
+			name:                 "Exclude entire directory with -e src/ (trailing slash)",
+			args:                 `-q "Exclude src/ dir" -e src/`,
 			expectedToContain:    []string{"--- FILE: docs/README.md ---", "--- FILE: docs/CONTRIBUTING.md ---"},
 			expectedToNotContain: []string{"--- FILE: src/main/app.go ---", "--- FILE: src/test/app_test.go ---"},
 		},
 		{
-			name: "Exclude a subdirectory",
-			args: `-q "Exclude test dir" -e src/test`,
+			name:                 "Exclude a subdirectory",
+			args:                 `-q "Exclude test dir" -e src/test`,
 			expectedToContain:    []string{"--- FILE: src/main/app.go ---", "--- FILE: src/main/utils.go ---"},
 			expectedToNotContain: []string{"--- FILE: src/test/app_test.go ---"},
 		},
 		{
-			name: "Exclude multiple directories",
-			args: `-q "Exclude src and docs" -e src -e docs`,
+			name:                 "Exclude multiple directories",
+			args:                 `-q "Exclude src and docs" -e src -e docs`,
 			expectedToContain:    []string{"--- FILE: .gitignore ---", "--- FILE: large_important.txt ---"},
 			expectedToNotContain: []string{"--- FILE: src/main/app.go ---", "--- FILE: docs/README.md ---"},
 		},
 		{
-			name: "Force include a file from an excluded directory",
-			args: `-f build/output.txt -q "Force include from ignored dir"`,
+			name:                 "Force include a file from an excluded directory",
+			args:                 `-f build/output.txt -q "Force include from ignored dir"`,
 			expectedToContain:    []string{"--- FILE: build/output.txt ---"},
 			expectedToNotContain: []string{},
 		},
@@ -396,6 +396,220 @@ func TestFunctionalMPP_ErrorCases(t *testing.T) {
 		expectedErrorMsg := "not a git repository"
 		if !strings.Contains(strings.ToLower(string(output)), expectedErrorMsg) {
 			t.Errorf("Expected error output to contain %q, but got:\n%s", expectedErrorMsg, string(output))
+		}
+	})
+}
+
+func TestFunctionalMPP_PromptMessages(t *testing.T) {
+	repoPath := setupTestRepo(t)
+	defer cleanupTestRepo(t, repoPath)
+
+	testCases := []struct {
+		name                 string
+		args                 string
+		expectedToContain    []string
+		expectedToNotContain []string
+	}{
+		{
+			name: "Role message appears before files",
+			args: `-i src/main/app.go --role-message "You are a Go expert" -q "Test question" --stdout`,
+			expectedToContain: []string{
+				"You are a Go expert",
+				"Here is the context of my current project",
+				"--- FILE: src/main/app.go ---",
+			},
+			expectedToNotContain: []string{},
+		},
+		{
+			name: "Extra context appears before question",
+			args: `-i src/main/app.go --extra-context "Focus on performance" -q "Test question" --stdout`,
+			expectedToContain: []string{
+				"Focus on performance",
+				"Based on the context provided above, answer the following question:",
+				"Test question",
+			},
+			expectedToNotContain: []string{},
+		},
+		{
+			name: "Last words appears at the end",
+			args: `-i src/main/app.go --last-words "Thank you for your help!" -q "Test question" --stdout`,
+			expectedToContain: []string{
+				"Test question",
+				"Thank you for your help!",
+			},
+			expectedToNotContain: []string{},
+		},
+		{
+			name: "All three message options together",
+			args: `-i src/main/app.go --role-message "Expert" --extra-context "Context" --last-words "Thanks" -q "Question" --stdout`,
+			expectedToContain: []string{
+				"Expert",
+				"Context",
+				"Thanks",
+				"Question",
+			},
+			expectedToNotContain: []string{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			commandString := fmt.Sprintf("%s %s", mppBinaryPath, tc.args)
+			cmd := exec.Command("bash", "-c", commandString)
+			cmd.Dir = repoPath
+
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("Command failed: %v\nOutput:\n%s", err, string(output))
+			}
+
+			promptContent := string(output)
+
+			for _, expected := range tc.expectedToContain {
+				if !strings.Contains(promptContent, expected) {
+					t.Errorf("Expected prompt to contain %q but it did not.", expected)
+				}
+			}
+
+			// Verify order of messages
+			if tc.name == "All three message options together" {
+				expertIdx := strings.Index(promptContent, "Expert")
+				contextIdx := strings.Index(promptContent, "Context")
+				thanksIdx := strings.Index(promptContent, "Thanks")
+				questionIdx := strings.Index(promptContent, "Question")
+
+				if expertIdx == -1 || contextIdx == -1 || thanksIdx == -1 || questionIdx == -1 {
+					t.Fatal("One or more expected strings not found")
+				}
+
+				// Expert should come first (role message before files)
+				// Context should come after files but before question
+				// Question in the middle
+				// Thanks should come last
+				if !(expertIdx < contextIdx && contextIdx < questionIdx && questionIdx < thanksIdx) {
+					t.Errorf("Messages appear in wrong order. Expert: %d, Context: %d, Question: %d, Thanks: %d",
+						expertIdx, contextIdx, questionIdx, thanksIdx)
+				}
+			}
+		})
+	}
+}
+
+func TestFunctionalMPP_Aliases(t *testing.T) {
+	repoPath := setupTestRepo(t)
+	defer cleanupTestRepo(t, repoPath)
+
+	// Create a .mpp.txt config file in the test repo
+	configPath := filepath.Join(repoPath, ".mpp.txt")
+	configContent := `# Test aliases
+go_files: -i src/**/*.go
+js_expert: --role-message "You are a JS expert" -i docs/*.md
+combined: -i src/main/*.go --extra-context "Focus on main package"
+`
+	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create config file: %v", err)
+	}
+
+	t.Run("List aliases shows available aliases", func(t *testing.T) {
+		commandString := fmt.Sprintf("%s --list-aliases", mppBinaryPath)
+		cmd := exec.Command("bash", "-c", commandString)
+		cmd.Dir = repoPath
+
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("Command failed: %v\nOutput:\n%s", err, string(output))
+		}
+
+		outputStr := string(output)
+		expectedStrings := []string{
+			"Available aliases:",
+			"go_files:",
+			"js_expert:",
+			"combined:",
+		}
+
+		for _, expected := range expectedStrings {
+			if !strings.Contains(outputStr, expected) {
+				t.Errorf("Expected output to contain %q but it did not.\nOutput:\n%s", expected, outputStr)
+			}
+		}
+	})
+
+	t.Run("Use alias with -a flag", func(t *testing.T) {
+		commandString := fmt.Sprintf("%s -a go_files -q \"Test question\" --stdout", mppBinaryPath)
+		cmd := exec.Command("bash", "-c", commandString)
+		cmd.Dir = repoPath
+
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("Command failed: %v\nOutput:\n%s", err, string(output))
+		}
+
+		// The output should contain only .go files
+		outputStr := string(output)
+		if !strings.Contains(outputStr, "--- FILE: src/main/app.go ---") {
+			t.Error("Expected to find app.go in output")
+		}
+		if strings.Contains(outputStr, "--- FILE: docs/README.md ---") {
+			t.Error("Should not contain README.md when using go_files alias")
+		}
+	})
+
+	t.Run("Alias with role message", func(t *testing.T) {
+		commandString := fmt.Sprintf("%s -a js_expert -q \"Test question\" --stdout", mppBinaryPath)
+		cmd := exec.Command("bash", "-c", commandString)
+		cmd.Dir = repoPath
+
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("Command failed: %v\nOutput:\n%s", err, string(output))
+		}
+
+		outputStr := string(output)
+		if !strings.Contains(outputStr, "You are a JS expert") {
+			t.Error("Expected to find role message from alias")
+		}
+		// Should include markdown files since the alias uses docs/*.md
+		if !strings.Contains(outputStr, "--- FILE: docs/README.md ---") {
+			t.Error("Expected to find README.md from alias pattern")
+		}
+	})
+
+	t.Run("Alias options can be overridden", func(t *testing.T) {
+		// Use go_files alias but add an additional include pattern
+		commandString := fmt.Sprintf("%s -a go_files -i docs/*.md -q \"Test question\" --stdout", mppBinaryPath)
+		cmd := exec.Command("bash", "-c", commandString)
+		cmd.Dir = repoPath
+
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("Command failed: %v\nOutput:\n%s", err, string(output))
+		}
+
+		outputStr := string(output)
+		// Should contain both .go and .md files
+		if !strings.Contains(outputStr, "--- FILE: src/main/app.go ---") {
+			t.Error("Expected to find app.go in output")
+		}
+		if !strings.Contains(outputStr, "--- FILE: docs/README.md ---") {
+			t.Error("Expected to find README.md in output")
+		}
+	})
+
+	t.Run("Non-existent alias returns error", func(t *testing.T) {
+		commandString := fmt.Sprintf("%s -a nonexistent -q \"Test question\"", mppBinaryPath)
+		cmd := exec.Command("bash", "-c", commandString)
+		cmd.Dir = repoPath
+
+		output, err := cmd.CombinedOutput()
+		if err == nil {
+			t.Fatal("Expected command to fail with non-existent alias, but it succeeded")
+		}
+
+		outputStr := string(output)
+		if !strings.Contains(outputStr, "alias 'nonexistent' not found") {
+			t.Errorf("Expected error message about alias not found, got:\n%s", outputStr)
 		}
 	})
 }

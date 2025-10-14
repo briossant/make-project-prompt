@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/atotto/clipboard"
+	"github.com/briossant/make-project-prompt/pkg/config"
 	"github.com/briossant/make-project-prompt/pkg/files"
 	"github.com/briossant/make-project-prompt/pkg/prompt"
 )
@@ -26,6 +27,11 @@ var (
 	quietMode            bool
 	showHelp             bool
 	dryRun               bool
+	roleMessage          string
+	extraContext         string
+	lastWords            string
+	aliasName            string
+	listAliases          bool
 )
 
 // multiStringFlag is a custom flag type that can be specified multiple times
@@ -53,10 +59,15 @@ func init() {
 	flag.BoolVar(&quietMode, "quiet", false, "Suppress all non-essential output. Useful with --stdout or --output for scripting.")
 	flag.BoolVar(&dryRun, "dry-run", false, "Perform a dry run. Lists the files that would be included in the prompt without generating it.")
 	flag.BoolVar(&showHelp, "h", false, "Displays this help message.")
+	flag.StringVar(&roleMessage, "role-message", "", "Pre-prompt message placed before all files.")
+	flag.StringVar(&extraContext, "extra-context", "", "Pre-prompt message placed before the question.")
+	flag.StringVar(&lastWords, "last-words", "", "Post-prompt message placed at the end of the whole message.")
+	flag.StringVar(&aliasName, "a", "", "Use a predefined alias from config files.")
+	flag.BoolVar(&listAliases, "list-aliases", false, "List all available aliases from config files.")
 
 	// Override usage message
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [-i <include_pattern>] [-e <exclude_pattern>] [-f <force_include_pattern>] [-q \"question\"] [-c] [-qf file] [--stdout] [--quiet] [--dry-run] [--output file] [-h]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [-i <include_pattern>] [-e <exclude_pattern>] [-f <force_include_pattern>] [-q \"question\"] [-c] [-qf file] [--role-message \"msg\"] [--extra-context \"msg\"] [--last-words \"msg\"] [-a \"alias\"] [--list-aliases] [--stdout] [--quiet] [--dry-run] [--output file] [-h]\n\n", os.Args[0])
 		fmt.Fprintln(os.Stderr, "Options:")
 		// Custom print defaults to match README style
 		fmt.Fprintf(os.Stderr, "  -i <pattern> : %s\n", flag.Lookup("i").Usage)
@@ -65,6 +76,11 @@ func init() {
 		fmt.Fprintf(os.Stderr, "  -q \"question\" : %s\n", flag.Lookup("q").Usage)
 		fmt.Fprintf(os.Stderr, "  -c            : %s\n", flag.Lookup("c").Usage)
 		fmt.Fprintf(os.Stderr, "  -qf <file>    : %s\n", flag.Lookup("qf").Usage)
+		fmt.Fprintf(os.Stderr, "  --role-message \"msg\" : %s\n", flag.Lookup("role-message").Usage)
+		fmt.Fprintf(os.Stderr, "  --extra-context \"msg\" : %s\n", flag.Lookup("extra-context").Usage)
+		fmt.Fprintf(os.Stderr, "  --last-words \"msg\" : %s\n", flag.Lookup("last-words").Usage)
+		fmt.Fprintf(os.Stderr, "  -a \"alias\"    : %s\n", flag.Lookup("a").Usage)
+		fmt.Fprintf(os.Stderr, "  --list-aliases : %s\n", flag.Lookup("list-aliases").Usage)
 		fmt.Fprintf(os.Stderr, "  --stdout      : %s\n", flag.Lookup("stdout").Usage)
 		fmt.Fprintf(os.Stderr, "  --quiet       : %s\n", flag.Lookup("quiet").Usage)
 		fmt.Fprintf(os.Stderr, "  --dry-run     : %s\n", flag.Lookup("dry-run").Usage)
@@ -72,11 +88,17 @@ func init() {
 		fmt.Fprintf(os.Stderr, "  -h            : %s\n", flag.Lookup("h").Usage)
 
 		fmt.Fprintln(os.Stderr, "\nNote: If multiple question input methods (-q, -c, -qf) are provided, the last one in the command line takes precedence.")
+		fmt.Fprintln(os.Stderr, "      For non-combining options (all except -i, -e, -f), the last occurrence takes precedence.")
+		fmt.Fprintln(os.Stderr, "\nAliases:")
+		fmt.Fprintln(os.Stderr, "  Define aliases in .mpp.txt files using the format: alias_name: options")
+		fmt.Fprintln(os.Stderr, "  Example: js_dev: --role-message \"You are a JS expert\" -i **.js")
 		fmt.Fprintln(os.Stderr, "\nExamples:")
 		fmt.Fprintln(os.Stderr, "  make-project-prompt -i 'src/**/*.js' -e '**/__tests__/*' -q \"Refactor this React code to use Hooks.\"")
 		fmt.Fprintln(os.Stderr, "  make-project-prompt -i '*.go' -f 'assets/*.bin' -c")
 		fmt.Fprintln(os.Stderr, "  make-project-prompt -i '*.py' -qf question.txt  # Read question from file")
 		fmt.Fprintln(os.Stderr, "  make-project-prompt -i '*.py' -q \"Initial question\" -c  # Clipboard content will be used (last option wins)")
+		fmt.Fprintln(os.Stderr, "  make-project-prompt -a js_dev -q \"Review this code\"  # Use the js_dev alias")
+		fmt.Fprintln(os.Stderr, "  make-project-prompt --list-aliases  # List all available aliases")
 	}
 }
 
@@ -115,6 +137,9 @@ func processFilesAndGeneratePrompt() (string, int, error) {
 
 	// Generate prompt
 	generator := prompt.NewGenerator(fileInfos, question, quietMode)
+	generator.RoleMessage = roleMessage
+	generator.ExtraContext = extraContext
+	generator.LastWords = lastWords
 	promptText, fileCount, err := generator.Generate()
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to generate prompt: %w", err)
@@ -125,6 +150,45 @@ func processFilesAndGeneratePrompt() (string, int, error) {
 	}
 
 	return promptText, fileCount, nil
+}
+
+// expandAliasesInArgs expands any alias arguments in the command line
+func expandAliasesInArgs(args []string) ([]string, error) {
+	// Load aliases from config files
+	cfg, err := config.LoadAliases()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load aliases: %w", err)
+	}
+
+	var expanded []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		// Check if this is the -a or --a flag
+		if arg == "-a" || arg == "--a" {
+			// Get the alias name from next argument
+			if i+1 >= len(args) {
+				return nil, fmt.Errorf("flag -a requires an argument")
+			}
+			i++
+			aliasName := args[i]
+
+			// Look up the alias
+			alias, exists := cfg.GetAlias(aliasName)
+			if !exists {
+				return nil, fmt.Errorf("alias '%s' not found", aliasName)
+			}
+
+			// Expand the alias options
+			aliasArgs := config.ExpandAlias(alias.Options)
+			expanded = append(expanded, aliasArgs...)
+		} else {
+			// Regular argument
+			expanded = append(expanded, arg)
+		}
+	}
+
+	return expanded, nil
 }
 
 // customParseArgs parses command-line arguments, collecting all arguments until a new flag is encountered
@@ -162,6 +226,9 @@ func customParseArgs() {
 			} else if currentFlag == "-dry-run" || currentFlag == "--dry-run" {
 				dryRun = true
 				continue
+			} else if currentFlag == "-list-aliases" || currentFlag == "--list-aliases" {
+				listAliases = true
+				continue
 			}
 
 			// For flags that take a value, get the next argument
@@ -183,6 +250,14 @@ func customParseArgs() {
 					excludePatterns = append(excludePatterns, value)
 				case "-f", "--f":
 					forceIncludePatterns = append(forceIncludePatterns, value)
+				case "-role-message", "--role-message":
+					roleMessage = value
+				case "-extra-context", "--extra-context":
+					extraContext = value
+				case "-last-words", "--last-words":
+					lastWords = value
+				case "-a", "--a":
+					aliasName = value
 				}
 			}
 		} else if currentFlag == "-i" || currentFlag == "--i" {
@@ -249,6 +324,44 @@ func main() {
 	// Store original args before parsing to determine flag order later
 	originalArgs := make([]string, len(os.Args))
 	copy(originalArgs, os.Args)
+
+	// Check if --list-aliases is requested before expanding aliases
+	for _, arg := range os.Args[1:] {
+		if arg == "-list-aliases" || arg == "--list-aliases" {
+			listAliases = true
+			break
+		}
+	}
+
+	// Handle --list-aliases early
+	if listAliases {
+		cfg, err := config.LoadAliases()
+		if err != nil {
+			log.Fatalf("Error loading aliases: %v", err)
+		}
+
+		aliases := cfg.ListAliases()
+		if len(aliases) == 0 {
+			fmt.Println("No aliases found in .mpp.txt config files.")
+			os.Exit(0)
+		}
+
+		fmt.Println("Available aliases:")
+		for _, alias := range aliases {
+			fmt.Printf("  %s: %s\n", alias.Name, alias.Options)
+			fmt.Printf("    (defined in %s)\n", alias.Source)
+		}
+		os.Exit(0)
+	}
+
+	// Expand any aliases in the arguments
+	expandedArgs, err := expandAliasesInArgs(os.Args[1:])
+	if err != nil {
+		log.Fatalf("Error expanding aliases: %v", err)
+	}
+
+	// Replace os.Args with expanded arguments for parsing
+	os.Args = append([]string{os.Args[0]}, expandedArgs...)
 
 	// Custom argument parsing to handle multiple arguments per flag
 	customParseArgs()
