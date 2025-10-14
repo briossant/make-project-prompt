@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-
 // Helper function to set up a test repo for this package's tests.
 // It's good practice to keep helpers close to the tests that use them.
 func setupTestRepo(t *testing.T) string {
@@ -52,10 +51,10 @@ func TestListGitFiles_Hermetic(t *testing.T) {
 	}() // Change back when done
 
 	testCases := []struct {
-		name                 string
-		config               Config
-		expectedFiles        map[string]bool // Use a map for easy lookup
-		expectedForcedFiles  map[string]bool
+		name                string
+		config              Config
+		expectedFiles       map[string]bool // Use a map for easy lookup
+		expectedForcedFiles map[string]bool
 	}{
 		{
 			name:   "Default config lists all tracked text files",
@@ -148,7 +147,7 @@ func TestListGitFiles_Hermetic(t *testing.T) {
 				// Check if the forced status is correct
 				isForced := tc.expectedForcedFiles != nil && tc.expectedForcedFiles[info.Path]
 				if info.IsForced != isForced {
-				    t.Errorf("File %s: expected IsForced=%v, got %v", info.Path, isForced, info.IsForced)
+					t.Errorf("File %s: expected IsForced=%v, got %v", info.Path, isForced, info.IsForced)
 				}
 			}
 		})

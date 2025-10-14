@@ -1,0 +1,24 @@
+# Example .mpp.txt configuration file
+# Place this file in your project root or any parent directory
+# Rename to .mpp.txt to activate
+
+# JavaScript/TypeScript development
+js_dev: --role-message "You are a JavaScript expert" -i src/**/*.js -i src/**/*.ts -e **/__tests__/* -e **/*.test.js
+
+# Go development
+go_dev: --role-message "You are a Go expert" -i **/*.go -e **/*_test.go
+
+# Python development  
+python_dev: --role-message "You are a Python expert" -i **/*.py -e **/tests/** --extra-context "Focus on PEP 8 compliance and best practices"
+
+# Code review alias
+code_review: --role-message "You are a senior code reviewer" --extra-context "Look for bugs, security issues, and code quality problems" --last-words "Provide specific, actionable feedback"
+
+# Documentation review
+docs: -i README.md -i docs/**/*.md --role-message "You are a technical writer"
+
+# Quick project summary
+summary: -i README.md -i CONTRIBUTING.md -i LICENSE -q "Provide a concise summary of this project"
+
+# Full project context (use with caution on large projects)
+full: -i **/*.go -i **/*.py -i **/*.js -i **/*.ts -e **/node_modules/** -e **/vendor/** -e **/__pycache__/**
