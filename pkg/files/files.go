@@ -31,18 +31,10 @@ type Config struct {
 // ListGitFiles returns a list of files tracked by Git.
 // It is now much simpler. It only gets the list, it does not filter it.
 func ListGitFiles(config Config) ([]FileInfo, error) {
-	// Base command
-	args := []string{"ls-files", "-co", "--exclude-standard"}
+	// Base command to get all tracked files
+	args := []string{"ls-files", "-co", "--exclude-standard", "--"}
 
-	// If we need to consider ignored files (for -f patterns), add the flag.
-	if len(config.ForceIncludePatterns) > 0 {
-		args = append(args, "--ignored")
-	}
-
-	// Add -- separator to get all files
-	args = append(args, "--")
-
-	// Run the git command to get all files
+	// Run the git command to get all tracked files
 	cmd := exec.Command("git", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -61,11 +53,12 @@ func ListGitFiles(config Config) ([]FileInfo, error) {
 		fileList = strings.Split(output, "\n")
 	}
 
-	// If we have force include patterns, we need to make sure those files exist
-	// even if they're not returned by git ls-files
+	// If we have force include patterns, we need to find files matching those patterns
+	// even if they're not tracked by git (e.g., ignored files, binary files)
 	if len(config.ForceIncludePatterns) > 0 {
+		// For each force include pattern, find matching files on disk
 		for _, pattern := range config.ForceIncludePatterns {
-			// Check if the file exists on disk
+			// First check if the pattern is an exact file path
 			if _, err := os.Stat(pattern); err == nil {
 				// Check if it's already in the list
 				found := false
@@ -77,6 +70,24 @@ func ListGitFiles(config Config) ([]FileInfo, error) {
 				}
 				if !found {
 					fileList = append(fileList, pattern)
+				}
+			} else {
+				// If it's a glob pattern, use filepath.Glob to expand it
+				matches, err := filepath.Glob(pattern)
+				if err == nil && len(matches) > 0 {
+					for _, match := range matches {
+						// Add only if not already in the list
+						found := false
+						for _, file := range fileList {
+							if file == match {
+								found = true
+								break
+							}
+						}
+						if !found {
+							fileList = append(fileList, match)
+						}
+					}
 				}
 			}
 		}
@@ -198,7 +209,7 @@ func filterAndEnrichFiles(files []string, config Config) ([]FileInfo, error) {
 						break
 					}
 				}
-			} else if !hasForceIncludeFilters {
+			} else if !hasIncludeFilters && !hasForceIncludeFilters {
 				// If NO -i and NO -f flags are given, include everything by default.
 				isIncluded = true
 			}
