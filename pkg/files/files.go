@@ -56,36 +56,31 @@ func ListGitFiles(config Config) ([]FileInfo, error) {
 	// If we have force include patterns, we need to find files matching those patterns
 	// even if they're not tracked by git (e.g., ignored files, binary files)
 	if len(config.ForceIncludePatterns) > 0 {
+		// Use a map for O(1) duplicate checking
+		fileSet := make(map[string]bool)
+		for _, file := range fileList {
+			fileSet[file] = true
+		}
+
 		// For each force include pattern, find matching files on disk
 		for _, pattern := range config.ForceIncludePatterns {
-			// First check if the pattern is an exact file path
-			if _, err := os.Stat(pattern); err == nil {
-				// Check if it's already in the list
-				found := false
-				for _, file := range fileList {
-					if file == pattern {
-						found = true
-						break
-					}
-				}
-				if !found {
+			// Check if pattern contains glob metacharacters
+			hasGlobChars := strings.ContainsAny(pattern, "*?[]")
+			
+			if !hasGlobChars {
+				// Pattern is a literal file path - check if it exists
+				if _, err := os.Stat(pattern); err == nil && !fileSet[pattern] {
 					fileList = append(fileList, pattern)
+					fileSet[pattern] = true
 				}
 			} else {
-				// If it's a glob pattern, use filepath.Glob to expand it
+				// Pattern contains glob metacharacters - expand it
 				matches, err := filepath.Glob(pattern)
-				if err == nil && len(matches) > 0 {
+				if err == nil {
 					for _, match := range matches {
-						// Add only if not already in the list
-						found := false
-						for _, file := range fileList {
-							if file == match {
-								found = true
-								break
-							}
-						}
-						if !found {
+						if !fileSet[match] {
 							fileList = append(fileList, match)
+							fileSet[match] = true
 						}
 					}
 				}
