@@ -78,6 +78,32 @@ func TestFilterAndEnrichFiles_Unit(t *testing.T) {
 			},
 			expectedPaths: []string{"README.md"},
 		},
+		{
+			name: "Include and force include work together (BUGFIX TEST)",
+			config: Config{
+				IncludePatterns:      []string{"main.go"},
+				ForceIncludePatterns: []string{"README.md"},
+			},
+			expectedPaths: []string{"main.go", "README.md"},
+		},
+		{
+			name: "Include, force include, and exclude work together",
+			config: Config{
+				IncludePatterns:      []string{"README.md", "ROADMAP.md"},
+				ForceIncludePatterns: []string{"main.go"},
+				ExcludePatterns:      []string{"ROADMAP.md"},
+			},
+			expectedPaths: []string{"README.md", "main.go"},
+		},
+		{
+			name: "Force include bypasses exclude but include does not",
+			config: Config{
+				IncludePatterns:      []string{"README.md", "ROADMAP.md"},
+				ForceIncludePatterns: []string{"main.go"},
+				ExcludePatterns:      []string{"README.md", "ROADMAP.md"},
+			},
+			expectedPaths: []string{"main.go"},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -114,7 +140,7 @@ func TestFilterAndEnrichFiles_Unit(t *testing.T) {
 						if includeMap[file] {
 							isIncluded = true
 						}
-					} else if !hasForceIncludeFilters {
+					} else if !hasIncludeFilters && !hasForceIncludeFilters {
 						// If NO -i and NO -f flags are given, include everything by default.
 						isIncluded = true
 					}
