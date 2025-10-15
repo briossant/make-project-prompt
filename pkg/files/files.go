@@ -66,7 +66,7 @@ func ListGitFiles(config Config) ([]FileInfo, error) {
 		for _, pattern := range config.ForceIncludePatterns {
 			// Check if pattern contains glob metacharacters
 			hasGlobChars := strings.ContainsAny(pattern, "*?[]")
-			
+
 			if !hasGlobChars {
 				// Pattern is a literal file path - check if it exists
 				if _, err := os.Stat(pattern); err == nil && !fileSet[pattern] {
