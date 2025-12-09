@@ -260,3 +260,85 @@ func TestGenerator_EmptyQuestions(t *testing.T) {
 		}
 	})
 }
+
+func TestGenerator_RawModeInterleaving(t *testing.T) {
+	// Create a temporary directory for test files
+	tempDir, err := os.MkdirTemp("", "prompt_test_interleave")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp directory: %v", err)
+		}
+	}()
+
+	file1 := filepath.Join(tempDir, "file1.txt")
+	if err := os.WriteFile(file1, []byte("Content of file 1"), 0644); err != nil {
+		t.Fatalf("Failed to create file1: %v", err)
+	}
+
+	file2 := filepath.Join(tempDir, "file2.txt")
+	if err := os.WriteFile(file2, []byte("Content of file 2"), 0644); err != nil {
+		t.Fatalf("Failed to create file2: %v", err)
+	}
+
+	fileInfos1 := []files.FileInfo{
+		{
+			Path:      file1,
+			IsText:    true,
+			IsForced:  false,
+			Size:      int64(len("Content of file 1")),
+			IsRegular: true,
+		},
+	}
+
+	fileInfos2 := []files.FileInfo{
+		{
+			Path:      file2,
+			IsText:    true,
+			IsForced:  false,
+			Size:      int64(len("Content of file 2")),
+			IsRegular: true,
+		},
+	}
+
+	t.Run("Raw mode interleaves questions and files correctly", func(t *testing.T) {
+		generator := NewGenerator([]files.FileInfo{}, "", false)
+		generator.RawMode = true
+		generator.ContentItems = []ContentItem{
+			{Type: "question", Content: "Header text", Order: 0},
+			{Type: "file_group", Files: fileInfos1, Order: 1},
+			{Type: "question", Content: "Middle text", Order: 2},
+			{Type: "file_group", Files: fileInfos2, Order: 3},
+			{Type: "question", Content: "Footer text", Order: 4},
+		}
+
+		promptText, fileCount, err := generator.Generate()
+		if err != nil {
+			t.Fatalf("Generate failed: %v", err)
+		}
+
+		if fileCount != 2 {
+			t.Errorf("Expected 2 files in prompt, got %d", fileCount)
+		}
+
+		// Check order of content
+		headerIdx := strings.Index(promptText, "Header text")
+		file1Idx := strings.Index(promptText, "Content of file 1")
+		middleIdx := strings.Index(promptText, "Middle text")
+		file2Idx := strings.Index(promptText, "Content of file 2")
+		footerIdx := strings.Index(promptText, "Footer text")
+
+		if headerIdx == -1 || file1Idx == -1 || middleIdx == -1 || file2Idx == -1 || footerIdx == -1 {
+			t.Fatal("Not all content items found in prompt")
+		}
+
+		// Verify order
+		if !(headerIdx < file1Idx && file1Idx < middleIdx && middleIdx < file2Idx && file2Idx < footerIdx) {
+			t.Error("Content items are not in the correct order")
+			t.Logf("Order: header=%d, file1=%d, middle=%d, file2=%d, footer=%d",
+				headerIdx, file1Idx, middleIdx, file2Idx, footerIdx)
+		}
+	})
+}

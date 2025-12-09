@@ -12,9 +12,11 @@ import (
 
 // ContentItem represents a piece of content to include in the prompt
 type ContentItem struct {
-	Type    string // "question", "file_pattern", "tree"
-	Content string // The actual content or pattern
-	Order   int    // Original position in args (for --raw mode)
+	Type         string           // "question", "file_group", "tree"
+	Content      string           // The actual content for questions
+	Order        int              // Original position in args (for --raw mode)
+	FilePatterns []string         // For file_group type: the patterns to match
+	Files        []files.FileInfo // For file_group type: the matched files
 }
 
 // Generator handles prompt generation
@@ -22,6 +24,7 @@ type Generator struct {
 	Files        []files.FileInfo
 	Question     string // Deprecated: use Questions for new code
 	Questions    []ContentItem
+	ContentItems []ContentItem // Ordered list of all content for raw mode
 	MaxFileSize  int64
 	QuietMode    bool
 	RoleMessage  string
@@ -139,19 +142,76 @@ func (g *Generator) generateRawMode() (string, int, error) {
 	var promptContent strings.Builder
 	fileCounter := 0
 
-	// In raw mode: write all files, then all questions
-	// Note: Full interleaving based on argument order would require tracking
-	// the order of -i/-q/-qf flags, which is a future enhancement
-
-	// Write all files
-	fileCounter = g.writeFiles(&promptContent)
-
-	// Write all questions in order
-	for _, q := range g.Questions {
-		promptContent.WriteString("\n" + q.Content + "\n")
+	// In raw mode: interleave questions and files based on ContentItems order
+	if len(g.ContentItems) > 0 {
+		// Process content items in order
+		for _, item := range g.ContentItems {
+			if item.Type == "question" {
+				promptContent.WriteString(item.Content + "\n\n")
+			} else if item.Type == "file_group" {
+				// Write files for this specific group
+				count := g.writeFileGroup(&promptContent, item.Files)
+				fileCounter += count
+			}
+		}
+	} else {
+		// Fallback: write all files, then all questions
+		fileCounter = g.writeFiles(&promptContent)
+		for _, q := range g.Questions {
+			promptContent.WriteString("\n" + q.Content + "\n")
+		}
 	}
 
 	return promptContent.String(), fileCounter, nil
+}
+
+// writeFileGroup writes a specific group of files
+func (g *Generator) writeFileGroup(builder *strings.Builder, fileList []files.FileInfo) int {
+	fileCounter := 0
+
+	for _, file := range fileList {
+		// Skip if not a regular file
+		if !file.IsRegular {
+			if !g.QuietMode {
+				fmt.Fprintf(os.Stderr, "Warning: File '%s' is not a regular file. Skipping.\n", file.Path)
+			}
+			continue
+		}
+
+		// Skip if file is too large (unless force included)
+		if !file.IsForced && file.Size > g.MaxFileSize {
+			if !g.QuietMode {
+				fmt.Fprintf(os.Stderr, "Info: Skipping file '%s' because it is too large (> 1MiB).\n", file.Path)
+			}
+			continue
+		}
+
+		// Skip if not a text file (unless force included)
+		if !file.IsForced && !file.IsText {
+			if !g.QuietMode {
+				fmt.Fprintf(os.Stderr, "Info: Skipping file '%s' (non-text file).\n", file.Path)
+			}
+			continue
+		}
+
+		// Read file content
+		content, err := os.ReadFile(file.Path)
+		if err != nil {
+			if !g.QuietMode {
+				fmt.Fprintf(os.Stderr, "Warning: Failed to read content of '%s': %v. Skipping.\n", file.Path, err)
+			}
+			continue
+		}
+
+		// Add file content to prompt
+		builder.WriteString("--- FILE: " + file.Path + " ---\n")
+		builder.Write(content)
+		builder.WriteString("\n--- END FILE: " + file.Path + " ---\n\n")
+
+		fileCounter++
+	}
+
+	return fileCounter
 }
 
 // writeFiles writes file content to the builder and returns the count

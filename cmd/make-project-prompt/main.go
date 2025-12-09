@@ -35,6 +35,15 @@ var (
 	rawMode              bool
 )
 
+// argOrderItem tracks the order of -i, -q, -qf, -c flags for raw mode
+type argOrderItem struct {
+	Type    string // "include", "question", "question_file", "clipboard"
+	Content string // The pattern or question content
+	Order   int    // Position in argument list
+}
+
+var argOrder []argOrderItem
+
 // multiStringFlag is a custom flag type that can be specified multiple times
 type multiStringFlag []string
 
@@ -114,89 +123,216 @@ func init() {
 
 // processFilesAndGeneratePrompt handles file processing and prompt generation
 func processFilesAndGeneratePrompt() (string, int, error) {
-	// Create file config
-	fileConfig := files.Config{
-		IncludePatterns:      includePatterns,
-		ExcludePatterns:      excludePatterns,
-		ForceIncludePatterns: forceIncludePatterns,
+	// Build ContentItems for raw mode based on argOrder
+	var contentItems []prompt.ContentItem
+	var allFileInfos []files.FileInfo
+
+	if rawMode && len(argOrder) > 0 {
+		// In raw mode with explicit order, list files per pattern group
+		for _, item := range argOrder {
+			switch item.Type {
+			case "question":
+				contentItems = append(contentItems, prompt.ContentItem{
+					Type:    "question",
+					Content: item.Content,
+					Order:   item.Order,
+				})
+			case "question_file":
+				fileContent, err := os.ReadFile(item.Content)
+				if err != nil {
+					return "", 0, fmt.Errorf("error reading from file %s: %w", item.Content, err)
+				}
+				if len(fileContent) == 0 {
+					return "", 0, fmt.Errorf("file %s is empty", item.Content)
+				}
+				contentItems = append(contentItems, prompt.ContentItem{
+					Type:    "question",
+					Content: string(fileContent),
+					Order:   item.Order,
+				})
+			case "clipboard":
+				clipContent, err := clipboard.ReadAll()
+				if err != nil {
+					return "", 0, fmt.Errorf("error reading from clipboard: %w", err)
+				}
+				if clipContent == "" {
+					return "", 0, fmt.Errorf("clipboard is empty")
+				}
+				contentItems = append(contentItems, prompt.ContentItem{
+					Type:    "question",
+					Content: clipContent,
+					Order:   item.Order,
+				})
+			case "include", "force_include":
+				// List files for this specific pattern
+				fileConfig := files.Config{
+					IncludePatterns: []string{item.Content},
+					ExcludePatterns: excludePatterns,
+				}
+				if item.Type == "force_include" {
+					fileConfig.ForceIncludePatterns = []string{item.Content}
+					fileConfig.IncludePatterns = []string{}
+				}
+
+				fileInfos, err := files.ListGitFiles(fileConfig)
+				if err != nil {
+					return "", 0, fmt.Errorf("failed to list Git files for pattern %s: %w", item.Content, err)
+				}
+
+				// Add these files to allFileInfos for later counting
+				allFileInfos = append(allFileInfos, fileInfos...)
+
+				// Create a file_group item with the matched files
+				contentItems = append(contentItems, prompt.ContentItem{
+					Type:         "file_group",
+					FilePatterns: []string{item.Content},
+					Files:        fileInfos,
+					Order:        item.Order,
+				})
+			}
+		}
+	} else {
+		// Non-raw mode or raw mode without explicit patterns: list all files at once
+		fileConfig := files.Config{
+			IncludePatterns:      includePatterns,
+			ExcludePatterns:      excludePatterns,
+			ForceIncludePatterns: forceIncludePatterns,
+		}
+
+		fileInfos, err := files.ListGitFiles(fileConfig)
+		if err != nil {
+			return "", 0, fmt.Errorf("failed to list Git files: %w", err)
+		}
+		allFileInfos = fileInfos
+
+		if rawMode && len(argOrder) == 0 {
+			// Raw mode with no explicit -i flags: add files first, then questions
+			if len(fileInfos) > 0 {
+				contentItems = append(contentItems, prompt.ContentItem{
+					Type:         "file_group",
+					FilePatterns: []string{"*"},
+					Files:        fileInfos,
+					Order:        0,
+				})
+			}
+
+			// Then add questions
+			order := 1
+			for _, q := range questions {
+				contentItems = append(contentItems, prompt.ContentItem{
+					Type:    "question",
+					Content: q,
+					Order:   order,
+				})
+				order++
+			}
+
+			for _, qf := range questionFiles {
+				fileContent, err := os.ReadFile(qf)
+				if err != nil {
+					return "", 0, fmt.Errorf("error reading from file %s: %w", qf, err)
+				}
+				if len(fileContent) == 0 {
+					return "", 0, fmt.Errorf("file %s is empty", qf)
+				}
+				contentItems = append(contentItems, prompt.ContentItem{
+					Type:    "question",
+					Content: string(fileContent),
+					Order:   order,
+				})
+				order++
+			}
+
+			if useClipboard {
+				clipContent, err := clipboard.ReadAll()
+				if err != nil {
+					return "", 0, fmt.Errorf("error reading from clipboard: %w", err)
+				}
+				if clipContent == "" {
+					return "", 0, fmt.Errorf("clipboard is empty")
+				}
+				contentItems = append(contentItems, prompt.ContentItem{
+					Type:    "question",
+					Content: clipContent,
+					Order:   order,
+				})
+			}
+		}
 	}
 
-	// List Git files with include/exclude/force patterns
-	fileInfos, err := files.ListGitFiles(fileConfig)
-	if err != nil {
-		return "", 0, fmt.Errorf("failed to list Git files: %w", err)
-	}
-
-	if len(fileInfos) == 0 {
+	if len(allFileInfos) == 0 {
 		if len(includePatterns) > 0 || len(forceIncludePatterns) > 0 {
 			allPatterns := append([]string{}, includePatterns...)
 			allPatterns = append(allPatterns, forceIncludePatterns...)
 			return "", 0, fmt.Errorf("no files matched the specified patterns: %v\nTry using different patterns or check if the files exist", allPatterns)
-		} else {
+		} else if !rawMode || len(argOrder) == 0 {
 			return "", 0, fmt.Errorf("no files found in the Git repository. Make sure you have committed or staged some files")
 		}
 	}
 
-	printInfo("Found %d files matching the specified patterns.\n", len(fileInfos))
+	printInfo("Found %d files matching the specified patterns.\n", len(allFileInfos))
 
-	// Collect all questions from various sources
+	// Collect all questions for default mode (non-raw)
 	var allQuestions []prompt.ContentItem
-	order := 0
+	if !rawMode {
+		order := 0
 
-	// Add questions from -q flags
-	for _, q := range questions {
-		allQuestions = append(allQuestions, prompt.ContentItem{
-			Type:    "question",
-			Content: q,
-			Order:   order,
-		})
-		order++
-	}
+		// Add questions from -q flags
+		for _, q := range questions {
+			allQuestions = append(allQuestions, prompt.ContentItem{
+				Type:    "question",
+				Content: q,
+				Order:   order,
+			})
+			order++
+		}
 
-	// Add questions from -qf flags
-	for _, qf := range questionFiles {
-		fileContent, err := os.ReadFile(qf)
-		if err != nil {
-			return "", 0, fmt.Errorf("error reading from file %s: %w", qf, err)
+		// Add questions from -qf flags
+		for _, qf := range questionFiles {
+			fileContent, err := os.ReadFile(qf)
+			if err != nil {
+				return "", 0, fmt.Errorf("error reading from file %s: %w", qf, err)
+			}
+			if len(fileContent) == 0 {
+				return "", 0, fmt.Errorf("file %s is empty", qf)
+			}
+			allQuestions = append(allQuestions, prompt.ContentItem{
+				Type:    "question",
+				Content: string(fileContent),
+				Order:   order,
+			})
+			order++
 		}
-		if len(fileContent) == 0 {
-			return "", 0, fmt.Errorf("file %s is empty", qf)
-		}
-		allQuestions = append(allQuestions, prompt.ContentItem{
-			Type:    "question",
-			Content: string(fileContent),
-			Order:   order,
-		})
-		order++
-	}
 
-	// Add question from clipboard if -c is used
-	if useClipboard {
-		clipContent, err := clipboard.ReadAll()
-		if err != nil {
-			return "", 0, fmt.Errorf("error reading from clipboard: %w", err)
+		// Add question from clipboard if -c is used
+		if useClipboard {
+			clipContent, err := clipboard.ReadAll()
+			if err != nil {
+				return "", 0, fmt.Errorf("error reading from clipboard: %w", err)
+			}
+			if clipContent == "" {
+				return "", 0, fmt.Errorf("clipboard is empty")
+			}
+			allQuestions = append(allQuestions, prompt.ContentItem{
+				Type:    "question",
+				Content: clipContent,
+				Order:   order,
+			})
+			order++
 		}
-		if clipContent == "" {
-			return "", 0, fmt.Errorf("clipboard is empty")
-		}
-		allQuestions = append(allQuestions, prompt.ContentItem{
-			Type:    "question",
-			Content: clipContent,
-			Order:   order,
-		})
-		order++
 	}
 
 	// Generate prompt
-	generator := prompt.NewGenerator(fileInfos, "", quietMode)
+	generator := prompt.NewGenerator(allFileInfos, "", quietMode)
 	generator.RoleMessage = roleMessage
 	generator.ExtraContext = extraContext
 	generator.LastWords = lastWords
 	generator.RawMode = rawMode
 	generator.Questions = allQuestions
+	generator.ContentItems = contentItems
 
-	// Add default question if no questions provided
-	if len(allQuestions) == 0 {
+	// Add default question if no questions provided (non-raw mode only)
+	if !rawMode && len(allQuestions) == 0 {
 		generator.Questions = []prompt.ContentItem{
 			{
 				Type:    "question",
@@ -261,6 +397,10 @@ func expandAliasesInArgs(args []string) ([]string, error) {
 func customParseArgs() {
 	args := os.Args[1:] // Skip the program name
 
+	// Reset argOrder for this parse
+	argOrder = []argOrderItem{}
+	orderCounter := 0
+
 	// Define a helper function to check if an argument is a flag
 	isFlag := func(arg string) bool {
 		return strings.HasPrefix(arg, "-")
@@ -282,6 +422,11 @@ func customParseArgs() {
 				continue
 			} else if currentFlag == "-c" || currentFlag == "--c" {
 				useClipboard = true
+				argOrder = append(argOrder, argOrderItem{
+					Type:  "clipboard",
+					Order: orderCounter,
+				})
+				orderCounter++
 				continue
 			} else if currentFlag == "-stdout" || currentFlag == "--stdout" {
 				useStdout = true
@@ -309,16 +454,40 @@ func customParseArgs() {
 				switch currentFlag {
 				case "-q", "--q":
 					questions = append(questions, value)
+					argOrder = append(argOrder, argOrderItem{
+						Type:    "question",
+						Content: value,
+						Order:   orderCounter,
+					})
+					orderCounter++
 				case "-qf", "--qf":
 					questionFiles = append(questionFiles, value)
+					argOrder = append(argOrder, argOrderItem{
+						Type:    "question_file",
+						Content: value,
+						Order:   orderCounter,
+					})
+					orderCounter++
 				case "-output", "--output":
 					outputFile = value
 				case "-i", "--i":
 					includePatterns = append(includePatterns, value)
+					argOrder = append(argOrder, argOrderItem{
+						Type:    "include",
+						Content: value,
+						Order:   orderCounter,
+					})
+					orderCounter++
 				case "-e", "--e":
 					excludePatterns = append(excludePatterns, value)
 				case "-f", "--f":
 					forceIncludePatterns = append(forceIncludePatterns, value)
+					argOrder = append(argOrder, argOrderItem{
+						Type:    "force_include",
+						Content: value,
+						Order:   orderCounter,
+					})
+					orderCounter++
 				case "-role-message", "--role-message":
 					roleMessage = value
 				case "-extra-context", "--extra-context":
@@ -332,18 +501,42 @@ func customParseArgs() {
 		} else if currentFlag == "-i" || currentFlag == "--i" {
 			// This is a non-flag argument following -i, add it to includePatterns
 			includePatterns = append(includePatterns, arg)
+			argOrder = append(argOrder, argOrderItem{
+				Type:    "include",
+				Content: arg,
+				Order:   orderCounter,
+			})
+			orderCounter++
 		} else if currentFlag == "-e" || currentFlag == "--e" {
 			// This is a non-flag argument following -e, add it to excludePatterns
 			excludePatterns = append(excludePatterns, arg)
 		} else if currentFlag == "-f" || currentFlag == "--f" {
 			// This is a non-flag argument following -f, add it to forceIncludePatterns
 			forceIncludePatterns = append(forceIncludePatterns, arg)
+			argOrder = append(argOrder, argOrderItem{
+				Type:    "force_include",
+				Content: arg,
+				Order:   orderCounter,
+			})
+			orderCounter++
 		} else if currentFlag == "-q" || currentFlag == "--q" {
 			// This is a non-flag argument following -q, add it to questions
 			questions = append(questions, arg)
+			argOrder = append(argOrder, argOrderItem{
+				Type:    "question",
+				Content: arg,
+				Order:   orderCounter,
+			})
+			orderCounter++
 		} else if currentFlag == "-qf" || currentFlag == "--qf" {
 			// This is a non-flag argument following -qf, add it to questionFiles
 			questionFiles = append(questionFiles, arg)
+			argOrder = append(argOrder, argOrderItem{
+				Type:    "question_file",
+				Content: arg,
+				Order:   orderCounter,
+			})
+			orderCounter++
 		}
 	}
 }
