@@ -40,7 +40,7 @@ func TestGenerator_MultipleQuestions(t *testing.T) {
 	// Test multiple questions accumulation
 	t.Run("Multiple questions are accumulated", func(t *testing.T) {
 		generator := NewGenerator(fileInfos, "", false)
-		
+
 		// Add multiple questions
 		generator.AddQuestion("First question", 0)
 		generator.AddQuestion("Second question", 1)

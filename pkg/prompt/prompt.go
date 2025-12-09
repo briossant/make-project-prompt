@@ -19,17 +19,17 @@ type ContentItem struct {
 
 // Generator handles prompt generation
 type Generator struct {
-	Files         []files.FileInfo
-	Question      string // Deprecated: use Questions for new code
-	Questions     []ContentItem
-	MaxFileSize   int64
-	QuietMode     bool
-	RoleMessage   string
-	ExtraContext  string
-	LastWords     string
-	RawMode       bool
-	FilePatterns  []ContentItem // For --raw mode: track file patterns with order
-	IncludeTree   bool          // Whether to include project tree
+	Files        []files.FileInfo
+	Question     string // Deprecated: use Questions for new code
+	Questions    []ContentItem
+	MaxFileSize  int64
+	QuietMode    bool
+	RoleMessage  string
+	ExtraContext string
+	LastWords    string
+	RawMode      bool
+	FilePatterns []ContentItem // For --raw mode: track file patterns with order
+	IncludeTree  bool          // Whether to include project tree
 }
 
 // NewGenerator creates a new prompt generator
@@ -143,7 +143,7 @@ func (g *Generator) generateRawMode() (string, int, error) {
 	// In raw mode, we interleave questions and files based on order
 	// For simplicity in this version: show all files, then all questions
 	// A more complex implementation would require tracking file pattern order
-	
+
 	// Write all files
 	fileCounter = g.writeFiles(&promptContent)
 
