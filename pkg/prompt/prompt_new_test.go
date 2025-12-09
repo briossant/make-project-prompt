@@ -160,12 +160,9 @@ func TestGenerator_RawMode(t *testing.T) {
 		}
 	})
 
-	t.Run("Raw mode excludes role message and extra context", func(t *testing.T) {
+	t.Run("Raw mode excludes default mode messages", func(t *testing.T) {
 		generator := NewGenerator(fileInfos, "", false)
 		generator.RawMode = true
-		generator.RoleMessage = "You are an expert"
-		generator.ExtraContext = "Extra info"
-		generator.LastWords = "Final words"
 		generator.Questions = []ContentItem{
 			{Type: "question", Content: "Question", Order: 0},
 		}
@@ -175,19 +172,18 @@ func TestGenerator_RawMode(t *testing.T) {
 			t.Fatalf("Generate failed: %v", err)
 		}
 
-		// In raw mode, these should be excluded
-		// (In current implementation they are not used, but verifying)
-		if strings.Contains(promptText, "You are an expert") {
-			t.Error("Raw mode should not include role message (currently not implemented to include it)")
+		// In raw mode, these default mode messages should be excluded
+		if strings.Contains(promptText, "Here is the context of my current project") {
+			t.Error("Raw mode should not include default intro message")
+		}
+		if strings.Contains(promptText, "PROJECT STRUCTURE") {
+			t.Error("Raw mode should not include project structure")
 		}
 	})
 
-	t.Run("Default mode includes all messages", func(t *testing.T) {
+	t.Run("Default mode includes all expected sections", func(t *testing.T) {
 		generator := NewGenerator(fileInfos, "", false)
 		generator.RawMode = false // Default mode
-		generator.RoleMessage = "You are an expert"
-		generator.ExtraContext = "Extra info"
-		generator.LastWords = "Final words"
 		generator.Questions = []ContentItem{
 			{Type: "question", Content: "Question", Order: 0},
 		}
@@ -199,10 +195,7 @@ func TestGenerator_RawMode(t *testing.T) {
 
 		// Default mode should include these
 		expectedPhrases := []string{
-			"You are an expert",
 			"Here is the context of my current project",
-			"Extra info",
-			"Final words",
 			"Question",
 		}
 

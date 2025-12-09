@@ -400,99 +400,166 @@ func TestFunctionalMPP_ErrorCases(t *testing.T) {
 	})
 }
 
-func TestFunctionalMPP_PromptMessages(t *testing.T) {
+func TestFunctionalMPP_QuestionAccumulation(t *testing.T) {
 	repoPath := setupTestRepo(t)
 	defer cleanupTestRepo(t, repoPath)
 
-	testCases := []struct {
-		name                 string
-		args                 string
-		expectedToContain    []string
-		expectedToNotContain []string
-	}{
-		{
-			name: "Role message appears before files",
-			args: `-i src/main/app.go --role-message "You are a Go expert" -q "Test question" --stdout`,
-			expectedToContain: []string{
-				"You are a Go expert",
-				"Here is the context of my current project",
-				"--- FILE: src/main/app.go ---",
-			},
-			expectedToNotContain: []string{},
-		},
-		{
-			name: "Extra context appears before question",
-			args: `-i src/main/app.go --extra-context "Focus on performance" -q "Test question" --stdout`,
-			expectedToContain: []string{
-				"Focus on performance",
-				"Based on the context provided above, answer the following question:",
-				"Test question",
-			},
-			expectedToNotContain: []string{},
-		},
-		{
-			name: "Last words appears at the end",
-			args: `-i src/main/app.go --last-words "Thank you for your help!" -q "Test question" --stdout`,
-			expectedToContain: []string{
-				"Test question",
-				"Thank you for your help!",
-			},
-			expectedToNotContain: []string{},
-		},
-		{
-			name: "All three message options together",
-			args: `-i src/main/app.go --role-message "Expert" --extra-context "Context" --last-words "Thanks" -q "Question" --stdout`,
-			expectedToContain: []string{
-				"Expert",
-				"Context",
-				"Thanks",
-				"Question",
-			},
-			expectedToNotContain: []string{},
-		},
-	}
+	t.Run("Multiple -q flags accumulate", func(t *testing.T) {
+		commandString := fmt.Sprintf(`%s -i src/main/app.go -q "First question" -q "Second question" -q "Third question" --stdout`, mppBinaryPath)
+		cmd := exec.Command("bash", "-c", commandString)
+		cmd.Dir = repoPath
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			commandString := fmt.Sprintf("%s %s", mppBinaryPath, tc.args)
-			cmd := exec.Command("bash", "-c", commandString)
-			cmd.Dir = repoPath
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("Command failed: %v\nOutput:\n%s", err, string(output))
+		}
 
-			output, err := cmd.CombinedOutput()
-			if err != nil {
-				t.Fatalf("Command failed: %v\nOutput:\n%s", err, string(output))
+		promptContent := string(output)
+
+		// All three questions should be present
+		if !strings.Contains(promptContent, "First question") {
+			t.Error("Expected prompt to contain 'First question'")
+		}
+		if !strings.Contains(promptContent, "Second question") {
+			t.Error("Expected prompt to contain 'Second question'")
+		}
+		if !strings.Contains(promptContent, "Third question") {
+			t.Error("Expected prompt to contain 'Third question'")
+		}
+
+		// Questions should appear in order
+		firstIdx := strings.Index(promptContent, "First question")
+		secondIdx := strings.Index(promptContent, "Second question")
+		thirdIdx := strings.Index(promptContent, "Third question")
+
+		if !(firstIdx < secondIdx && secondIdx < thirdIdx) {
+			t.Errorf("Questions appear in wrong order. First: %d, Second: %d, Third: %d", firstIdx, secondIdx, thirdIdx)
+		}
+	})
+
+	t.Run("Mix -q and -qf flags", func(t *testing.T) {
+		// Create a question file
+		questionFile := filepath.Join(repoPath, "test_question.txt")
+		if err := os.WriteFile(questionFile, []byte("Question from file"), 0644); err != nil {
+			t.Fatalf("Failed to create question file: %v", err)
+		}
+		defer os.Remove(questionFile)
+
+		commandString := fmt.Sprintf(`%s -i src/main/app.go -q "First question" -qf %s -q "Third question" --stdout`, mppBinaryPath, questionFile)
+		cmd := exec.Command("bash", "-c", commandString)
+		cmd.Dir = repoPath
+
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("Command failed: %v\nOutput:\n%s", err, string(output))
+		}
+
+		promptContent := string(output)
+
+		// All questions should be present
+		if !strings.Contains(promptContent, "First question") {
+			t.Error("Expected prompt to contain 'First question'")
+		}
+		if !strings.Contains(promptContent, "Question from file") {
+			t.Error("Expected prompt to contain 'Question from file'")
+		}
+		if !strings.Contains(promptContent, "Third question") {
+			t.Error("Expected prompt to contain 'Third question'")
+		}
+	})
+}
+
+func TestFunctionalMPP_RawMode(t *testing.T) {
+	repoPath := setupTestRepo(t)
+	defer cleanupTestRepo(t, repoPath)
+
+	t.Run("Raw mode removes default messages", func(t *testing.T) {
+		commandString := fmt.Sprintf(`%s --raw -i src/main/app.go -q "Test question" --stdout`, mppBinaryPath)
+		cmd := exec.Command("bash", "-c", commandString)
+		cmd.Dir = repoPath
+
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("Command failed: %v\nOutput:\n%s", err, string(output))
+		}
+
+		promptContent := string(output)
+
+		// Should NOT contain default mode messages
+		unwantedPhrases := []string{
+			"Here is the context of my current project",
+			"Based on the context provided above",
+			"PROJECT STRUCTURE",
+		}
+
+		for _, phrase := range unwantedPhrases {
+			if strings.Contains(promptContent, phrase) {
+				t.Errorf("Raw mode should not contain phrase %q, but it does", phrase)
 			}
+		}
 
-			promptContent := string(output)
+		// Should still contain file separators and question
+		if !strings.Contains(promptContent, "--- FILE: src/main/app.go ---") {
+			t.Error("Raw mode should still contain file separators")
+		}
+		if !strings.Contains(promptContent, "Test question") {
+			t.Error("Raw mode should contain the question")
+		}
+	})
 
-			for _, expected := range tc.expectedToContain {
-				if !strings.Contains(promptContent, expected) {
-					t.Errorf("Expected prompt to contain %q but it did not.", expected)
-				}
-			}
+	t.Run("Raw mode interleaves questions and files based on arg order", func(t *testing.T) {
+		commandString := fmt.Sprintf(`%s --raw -q "Before files" -i src/main/app.go -q "Between files" -i src/main/utils.go -q "After files" --stdout`, mppBinaryPath)
+		cmd := exec.Command("bash", "-c", commandString)
+		cmd.Dir = repoPath
 
-			// Verify order of messages
-			if tc.name == "All three message options together" {
-				expertIdx := strings.Index(promptContent, "Expert")
-				contextIdx := strings.Index(promptContent, "Context")
-				thanksIdx := strings.Index(promptContent, "Thanks")
-				questionIdx := strings.Index(promptContent, "Question")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("Command failed: %v\nOutput:\n%s", err, string(output))
+		}
 
-				if expertIdx == -1 || contextIdx == -1 || thanksIdx == -1 || questionIdx == -1 {
-					t.Fatal("One or more expected strings not found")
-				}
+		promptContent := string(output)
 
-				// Expert should come first (role message before files)
-				// Context should come after files but before question
-				// Question in the middle
-				// Thanks should come last
-				if !(expertIdx < contextIdx && contextIdx < questionIdx && questionIdx < thanksIdx) {
-					t.Errorf("Messages appear in wrong order. Expert: %d, Context: %d, Question: %d, Thanks: %d",
-						expertIdx, contextIdx, questionIdx, thanksIdx)
-				}
-			}
-		})
-	}
+		// Find positions of each element
+		beforeIdx := strings.Index(promptContent, "Before files")
+		appGoIdx := strings.Index(promptContent, "--- FILE: src/main/app.go ---")
+		betweenIdx := strings.Index(promptContent, "Between files")
+		utilsGoIdx := strings.Index(promptContent, "--- FILE: src/main/utils.go ---")
+		afterIdx := strings.Index(promptContent, "After files")
+
+		// Check all elements are present
+		if beforeIdx == -1 || appGoIdx == -1 || betweenIdx == -1 || utilsGoIdx == -1 || afterIdx == -1 {
+			t.Fatal("Not all expected elements found in output")
+		}
+
+		// Verify order: Before → app.go → Between → utils.go → After
+		if !(beforeIdx < appGoIdx && appGoIdx < betweenIdx && betweenIdx < utilsGoIdx && utilsGoIdx < afterIdx) {
+			t.Errorf("Elements appear in wrong order.\nBefore: %d, app.go: %d, Between: %d, utils.go: %d, After: %d",
+				beforeIdx, appGoIdx, betweenIdx, utilsGoIdx, afterIdx)
+		}
+	})
+
+	t.Run("Raw mode with multiple questions before files", func(t *testing.T) {
+		commandString := fmt.Sprintf(`%s --raw -q "Header 1" -q "Header 2" -i src/main/app.go -q "Footer" --stdout`, mppBinaryPath)
+		cmd := exec.Command("bash", "-c", commandString)
+		cmd.Dir = repoPath
+
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("Command failed: %v\nOutput:\n%s", err, string(output))
+		}
+
+		promptContent := string(output)
+
+		// Both headers should appear before the file
+		header1Idx := strings.Index(promptContent, "Header 1")
+		header2Idx := strings.Index(promptContent, "Header 2")
+		fileIdx := strings.Index(promptContent, "--- FILE: src/main/app.go ---")
+		footerIdx := strings.Index(promptContent, "Footer")
+
+		if !(header1Idx < header2Idx && header2Idx < fileIdx && fileIdx < footerIdx) {
+			t.Errorf("Elements appear in wrong order")
+		}
+	})
 }
 
 func TestFunctionalMPP_Aliases(t *testing.T) {
@@ -503,8 +570,8 @@ func TestFunctionalMPP_Aliases(t *testing.T) {
 	configPath := filepath.Join(repoPath, ".mpp.txt")
 	configContent := `# Test aliases
 go_files: -i src/**/*.go
-js_expert: --role-message "You are a JS expert" -i docs/*.md
-combined: -i src/main/*.go --extra-context "Focus on main package"
+js_files: -i docs/*.md
+combined: -i src/main/*.go -q "Focus on main package"
 `
 	err := os.WriteFile(configPath, []byte(configContent), 0644)
 	if err != nil {
@@ -525,7 +592,7 @@ combined: -i src/main/*.go --extra-context "Focus on main package"
 		expectedStrings := []string{
 			"Available aliases:",
 			"go_files:",
-			"js_expert:",
+			"js_files:",
 			"combined:",
 		}
 
@@ -556,8 +623,8 @@ combined: -i src/main/*.go --extra-context "Focus on main package"
 		}
 	})
 
-	t.Run("Alias with role message", func(t *testing.T) {
-		commandString := fmt.Sprintf("%s -a js_expert -q \"Test question\" --stdout", mppBinaryPath)
+	t.Run("Alias with question", func(t *testing.T) {
+		commandString := fmt.Sprintf("%s -a combined -q \"Additional question\" --stdout", mppBinaryPath)
 		cmd := exec.Command("bash", "-c", commandString)
 		cmd.Dir = repoPath
 
@@ -567,12 +634,12 @@ combined: -i src/main/*.go --extra-context "Focus on main package"
 		}
 
 		outputStr := string(output)
-		if !strings.Contains(outputStr, "You are a JS expert") {
-			t.Error("Expected to find role message from alias")
+		// Should include both questions (one from alias, one from command line)
+		if !strings.Contains(outputStr, "Focus on main package") {
+			t.Error("Expected to find question from alias")
 		}
-		// Should include markdown files since the alias uses docs/*.md
-		if !strings.Contains(outputStr, "--- FILE: docs/README.md ---") {
-			t.Error("Expected to find README.md from alias pattern")
+		if !strings.Contains(outputStr, "Additional question") {
+			t.Error("Expected to find question from command line")
 		}
 	})
 

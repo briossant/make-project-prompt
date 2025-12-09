@@ -27,9 +27,6 @@ var (
 	quietMode            bool
 	showHelp             bool
 	dryRun               bool
-	roleMessage          string
-	extraContext         string
-	lastWords            string
 	aliasName            string
 	listAliases          bool
 	rawMode              bool
@@ -69,16 +66,13 @@ func init() {
 	flag.BoolVar(&quietMode, "quiet", false, "Suppress all non-essential output. Useful with --stdout or --output for scripting.")
 	flag.BoolVar(&dryRun, "dry-run", false, "Perform a dry run. Lists the files that would be included in the prompt without generating it.")
 	flag.BoolVar(&showHelp, "h", false, "Displays this help message.")
-	flag.StringVar(&roleMessage, "role-message", "", "Pre-prompt message placed before all files (default mode only).")
-	flag.StringVar(&extraContext, "extra-context", "", "Pre-prompt message placed before the question (default mode only).")
-	flag.StringVar(&lastWords, "last-words", "", "Post-prompt message placed at the end of the whole message (default mode only).")
 	flag.StringVar(&aliasName, "a", "", "Use a predefined alias from config files.")
 	flag.BoolVar(&listAliases, "list-aliases", false, "List all available aliases from config files.")
 	flag.BoolVar(&rawMode, "raw", false, "Raw mode: remove pre-written messages and use argument order for positioning.")
 
 	// Override usage message
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [-i <include_pattern>] [-e <exclude_pattern>] [-f <force_include_pattern>] [-q \"text\"] [-c] [-qf file] [--raw] [--role-message \"msg\"] [--extra-context \"msg\"] [--last-words \"msg\"] [-a \"alias\"] [--list-aliases] [--stdout] [--quiet] [--dry-run] [--output file] [-h]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [-i <include_pattern>] [-e <exclude_pattern>] [-f <force_include_pattern>] [-q \"text\"] [-c] [-qf file] [--raw] [-a \"alias\"] [--list-aliases] [--stdout] [--quiet] [--dry-run] [--output file] [-h]\n\n", os.Args[0])
 		fmt.Fprintln(os.Stderr, "Options:")
 		// Custom print defaults to match README style
 		fmt.Fprintf(os.Stderr, "  -i <pattern> : %s\n", flag.Lookup("i").Usage)
@@ -88,9 +82,6 @@ func init() {
 		fmt.Fprintf(os.Stderr, "  -c            : %s\n", flag.Lookup("c").Usage)
 		fmt.Fprintf(os.Stderr, "  -qf <file>    : %s\n", flag.Lookup("qf").Usage)
 		fmt.Fprintf(os.Stderr, "  --raw         : %s\n", flag.Lookup("raw").Usage)
-		fmt.Fprintf(os.Stderr, "  --role-message \"msg\" : %s\n", flag.Lookup("role-message").Usage)
-		fmt.Fprintf(os.Stderr, "  --extra-context \"msg\" : %s\n", flag.Lookup("extra-context").Usage)
-		fmt.Fprintf(os.Stderr, "  --last-words \"msg\" : %s\n", flag.Lookup("last-words").Usage)
 		fmt.Fprintf(os.Stderr, "  -a \"alias\"    : %s\n", flag.Lookup("a").Usage)
 		fmt.Fprintf(os.Stderr, "  --list-aliases : %s\n", flag.Lookup("list-aliases").Usage)
 		fmt.Fprintf(os.Stderr, "  --stdout      : %s\n", flag.Lookup("stdout").Usage)
@@ -104,7 +95,7 @@ func init() {
 		fmt.Fprintln(os.Stderr, "      For non-combining options, the last occurrence takes precedence.")
 		fmt.Fprintln(os.Stderr, "\nAliases:")
 		fmt.Fprintln(os.Stderr, "  Define aliases in .mpp.txt files using the format: alias_name: options")
-		fmt.Fprintln(os.Stderr, "  Example: js_dev: --role-message \"You are a JS expert\" -i **.js")
+		fmt.Fprintln(os.Stderr, "  Example: js_dev: -i **/*.js -e **/__tests__/*")
 		fmt.Fprintln(os.Stderr, "\nExamples:")
 		fmt.Fprintln(os.Stderr, "  make-project-prompt -i 'src/**/*.js' -e '**/__tests__/*' -q \"Refactor this React code to use Hooks.\"")
 		fmt.Fprintln(os.Stderr, "  make-project-prompt -i '*.go' -q \"First question\" -q \"Second question\"  # Both questions included")
@@ -328,9 +319,6 @@ func processFilesAndGeneratePrompt() (string, int, error) {
 
 	// Generate prompt
 	generator := prompt.NewGenerator(allFileInfos, "", quietMode)
-	generator.RoleMessage = roleMessage
-	generator.ExtraContext = extraContext
-	generator.LastWords = lastWords
 	generator.RawMode = rawMode
 	generator.Questions = allQuestions
 	generator.ContentItems = contentItems
@@ -492,12 +480,6 @@ func customParseArgs() {
 						Order:   orderCounter,
 					})
 					orderCounter++
-				case "-role-message", "--role-message":
-					roleMessage = value
-				case "-extra-context", "--extra-context":
-					extraContext = value
-				case "-last-words", "--last-words":
-					lastWords = value
 				case "-a", "--a":
 					aliasName = value
 				}
