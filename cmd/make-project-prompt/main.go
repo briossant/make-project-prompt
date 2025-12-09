@@ -265,7 +265,11 @@ func processFilesAndGeneratePrompt() (string, int, error) {
 			allPatterns := append([]string{}, includePatterns...)
 			allPatterns = append(allPatterns, forceIncludePatterns...)
 			return "", 0, fmt.Errorf("no files matched the specified patterns: %v\nTry using different patterns or check if the files exist", allPatterns)
-		} else if !rawMode || len(argOrder) == 0 {
+		}
+		// In raw mode with questions but no files, allow it (questions-only mode)
+		// In other modes, require files
+		isQuestionsOnlyRawMode := rawMode && len(argOrder) > 0
+		if !isQuestionsOnlyRawMode {
 			return "", 0, fmt.Errorf("no files found in the Git repository. Make sure you have committed or staged some files")
 		}
 	}

@@ -12,7 +12,7 @@ import (
 
 // ContentItem represents a piece of content to include in the prompt
 type ContentItem struct {
-	Type         string           // "question", "file_group", "tree"
+	Type         string           // "question", "file_group"
 	Content      string           // The actual content for questions
 	Order        int              // Original position in args (for --raw mode)
 	FilePatterns []string         // For file_group type: the patterns to match
