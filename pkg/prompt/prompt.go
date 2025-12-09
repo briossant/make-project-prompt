@@ -28,8 +28,7 @@ type Generator struct {
 	ExtraContext string
 	LastWords    string
 	RawMode      bool
-	FilePatterns []ContentItem // For --raw mode: track file patterns with order
-	IncludeTree  bool          // Whether to include project tree
+	IncludeTree  bool // Whether to include project tree
 }
 
 // NewGenerator creates a new prompt generator
@@ -140,9 +139,9 @@ func (g *Generator) generateRawMode() (string, int, error) {
 	var promptContent strings.Builder
 	fileCounter := 0
 
-	// In raw mode, we interleave questions and files based on order
-	// For simplicity in this version: show all files, then all questions
-	// A more complex implementation would require tracking file pattern order
+	// In raw mode: write all files, then all questions
+	// Note: Full interleaving based on argument order would require tracking
+	// the order of -i/-q/-qf flags, which is a future enhancement
 
 	// Write all files
 	fileCounter = g.writeFiles(&promptContent)
