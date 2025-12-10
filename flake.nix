@@ -27,7 +27,7 @@
           src = ./.;
 
           # Use the computed hash for the vendor directory
-          vendorHash = "sha256-MtzrTRbcG9lMJqN6rcOnwW6xYJbJ3b0J3fuaq9hlEuo=";
+          vendorHash = "sha256-ewCKket3ARSY+AQLjWRdauEl5fMdamNXWCk3WMRjgBk=";
 
           nativeBuildInputs = with pkgs; [ makeWrapper gitMinimal tree file ];
 

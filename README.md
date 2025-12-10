@@ -22,15 +22,15 @@ This allows you to provide rich and precise context to the LLM for questions reg
     *   Output directly to stdout with the `--stdout` option.
     *   Suppress non-essential output with the `--quiet` option for easier scripting and automation.
     *   Perform a dry run with the `--dry-run` option to see which files would be included without generating the prompt.
-*   **Flexible Question Input:** 
-    *   Specify the question directly via the `-q` option.
+*   **Question Accumulation:**
+    *   Specify questions/text directly via the `-q` option (can be used multiple times - all accumulate).
     *   Use content from your clipboard via the `-c` option.
-    *   Read question from a file via the `-qf` option.
-    *   Multiple input methods supported with "last one wins" precedence.
-*   **Custom Prompt Messages:**
-    *   Add a role message before files with `--role-message` (e.g., "You are an expert developer").
-    *   Add extra context before the question with `--extra-context`.
-    *   Add final words at the end of the prompt with `--last-words`.
+    *   Read questions from files via the `-qf` option (can be used multiple times).
+    *   All question sources accumulate and appear in the order specified.
+*   **Raw Mode (`--raw`):**
+    *   Removes all pre-written messages for minimal output.
+    *   Supports full argument order-based positioning - questions and files appear in the exact order they're specified.
+    *   Perfect for crafting custom prompts with precise control.
 *   **Alias System:**
     *   Define reusable command aliases in `.mpp.txt` configuration files.
     *   Aliases are loaded recursively from the current directory up to the root.
@@ -155,7 +155,7 @@ After rebuilding (`nixos-rebuild switch` or `home-manager switch`), the commands
 ## Command Options
 
 ```bash
-Usage: make-project-prompt [-i <include_pattern>] [-e <exclude_pattern>] [-f <force_include_pattern>] [-q "question"] [-c] [-qf file] [--role-message "msg"] [--extra-context "msg"] [--last-words "msg"] [-a "alias"] [--list-aliases] [--stdout] [--quiet] [--dry-run] [--output file] [-h]
+Usage: make-project-prompt [-i <include_pattern>] [-e <exclude_pattern>] [-f <force_include_pattern>] [-q "text"] [-c] [-qf file] [--raw] [-a "alias"] [--list-aliases] [--stdout] [--quiet] [--dry-run] [--output file] [-h]
 
 Options:
   -i <pattern> : Pattern (glob) to INCLUDE files/folders (default: '*' if no -i is provided).
@@ -165,12 +165,10 @@ Options:
                  Can be used multiple times.
   -f <pattern> : Pattern (glob) to FORCE INCLUDE files/folders, bypassing file type and size checks.
                  Can be used multiple times (e.g., -f 'assets/*.bin' -f 'data/*.dat').
-  -q "question" : Specifies the question for the LLM.
-  -c            : Use clipboard content as the question for the LLM.
-  -qf <file>    : Path to a file containing the question for the LLM.
-  --role-message "msg" : Pre-prompt message placed before all files (e.g., "You are a Go expert").
-  --extra-context "msg" : Pre-prompt message placed before the question.
-  --last-words "msg" : Post-prompt message placed at the end of the whole message.
+  -q "text"    : Specifies a question or text for the LLM. Can be used multiple times - all questions will be included.
+  -c            : Use clipboard content as a question for the LLM.
+  -qf <file>    : Path to a file containing a question for the LLM. Can be used multiple times.
+  --raw         : Raw mode: remove pre-written messages and use argument order for positioning.
   -a "alias"    : Use a predefined alias from config files (.mpp.txt).
   --list-aliases : List all available aliases from config files.
   --stdout      : Write prompt to stdout instead of the clipboard.
@@ -179,15 +177,15 @@ Options:
   --output <file> : Write prompt to a file instead of the clipboard.
   -h            : Displays this help message.
 
-Note: If multiple question input methods (-q, -c, -qf) are provided, the last one in the command line takes precedence.
-      For non-combining options (all except -i, -e, -f), the last occurrence takes precedence.
+Note: Multiple -q and -qf options accumulate (all are included in order).
+      In --raw mode, argument order determines positioning in the output.
+      For non-combining options, the last occurrence takes precedence.
 
 Examples:
   make-project-prompt -i 'src/**/*.js' -e '**/__tests__/*' -q "Refactor this React code to use Hooks."
-  make-project-prompt -i '*.go' -f 'assets/*.bin' -c
+  make-project-prompt -i '*.go' -q "First question" -q "Second question"  # Both questions included
+  make-project-prompt --raw -q "Header" -i '*.py' -q "Footer"  # Raw mode with positioning
   make-project-prompt -i '*.py' -qf question.txt  # Read question from file
-  make-project-prompt -i '*.py' -q "Initial question" -c  # Clipboard content will be used (last option wins)
-  make-project-prompt --role-message "You are a Python expert" -i '*.py' -q "Review this code"
   make-project-prompt -a js_dev -q "Review this code"  # Use the js_dev alias
   make-project-prompt --list-aliases  # List all available aliases
 ```
@@ -205,9 +203,9 @@ Create a `.mpp.txt` file in your project root or any parent directory:
 alias_name: options
 
 # Example aliases
-js_dev: --role-message "You are a JavaScript expert" -i src/**/*.js -e **/__tests__/*
-go_expert: --role-message "You are a Go expert" -i **/*.go -e **/*_test.go
-python_review: -i **/*.py --extra-context "Focus on code quality and best practices"
+js_dev: -i src/**/*.js -e **/__tests__/*
+go_files: -i **/*.go -e **/*_test.go
+python_review: -i **/*.py -q "Focus on code quality and best practices"
 quick_readme: -i README.md -i CONTRIBUTING.md -q "Summarize this project"
 ```
 
@@ -221,7 +219,7 @@ mpp -a js_dev -q "Review this code"
 mpp --list-aliases
 
 # Combine an alias with additional options (options combine or override)
-mpp -a go_expert -i cmd/**/*.go -q "Explain the command structure"
+mpp -a go_files -i cmd/**/*.go -q "Explain the command structure"
 ```
 
 ### Alias Precedence
@@ -241,6 +239,12 @@ mpp
 # Generate a prompt, include only .py files, and ask a question
 mpp -i '*.py' -q "Explain the role of the main class in this Python project."
 
+# Ask multiple questions that accumulate
+mpp -i '*.go' -q "What does this code do?" -q "Are there any bugs?"
+
+# Generate a prompt in raw mode with custom positioning
+mpp --raw -q "Context: This is a web server." -i 'server/*.go' -q "Question: How can I improve performance?"
+
 # Generate a prompt, include files in 'src' and 'include', exclude test files
 mpp -i 'src/*' -i 'include/*' -e '*_test.go' -q "Check if there are any concurrency issues in this Go code."
 
@@ -253,14 +257,11 @@ mpp -c
 # Generate a prompt using a question from a file
 mpp -i '*.go' -qf path/to/question.txt
 
-# Generate a prompt with multiple question input methods (clipboard content will be used)
-mpp -q "This question will be overridden" -c
+# Mix multiple question sources (all accumulate)
+mpp -i '*.py' -q "Question 1" -qf questions.txt -q "Question 3"
 
 # Perform a dry run to see which files would be included without generating the prompt
 mpp -i '*.go' --dry-run
-
-# Use custom prompt messages
-mpp -i '*.py' --role-message "You are a Python expert" --extra-context "Focus on performance" -q "Review this code"
 
 # Use an alias for common workflows
 mpp -a python_review -q "Check for potential bugs"

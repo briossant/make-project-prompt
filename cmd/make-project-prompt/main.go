@@ -19,20 +19,27 @@ var (
 	includePatterns      multiStringFlag
 	excludePatterns      multiStringFlag
 	forceIncludePatterns multiStringFlag
-	question             string
+	questions            multiStringFlag // Changed to support multiple questions
+	questionFiles        multiStringFlag // Changed to support multiple question files
 	useClipboard         bool
-	questionFile         string
 	outputFile           string
 	useStdout            bool
 	quietMode            bool
 	showHelp             bool
 	dryRun               bool
-	roleMessage          string
-	extraContext         string
-	lastWords            string
 	aliasName            string
 	listAliases          bool
+	rawMode              bool
 )
+
+// argOrderItem tracks the order of -i, -q, -qf, -c flags for raw mode
+type argOrderItem struct {
+	Type    string // "include", "question", "question_file", "clipboard"
+	Content string // The pattern or question content
+	Order   int    // Position in argument list
+}
+
+var argOrder []argOrderItem
 
 // multiStringFlag is a custom flag type that can be specified multiple times
 type multiStringFlag []string
@@ -51,34 +58,30 @@ func init() {
 	flag.Var(&includePatterns, "i", "Pattern (glob) to INCLUDE files/folders (default: '*' if no -i is provided).\n                 Can be used multiple times (e.g., -i 'src/*' -i '*.py').")
 	flag.Var(&excludePatterns, "e", "Pattern (glob) to EXCLUDE files/folders (e.g., -e '*.log' -e 'tests/data/*').\n                 Can be used multiple times.")
 	flag.Var(&forceIncludePatterns, "f", "Pattern (glob) to FORCE INCLUDE files/folders, bypassing file type and size checks.\n                 Can be used multiple times (e.g., -f 'assets/*.bin' -f 'data/*.dat').")
-	flag.StringVar(&question, "q", "[YOUR QUESTION HERE]", "Specifies the question for the LLM.")
-	flag.BoolVar(&useClipboard, "c", false, "Use clipboard content as the question for the LLM.")
-	flag.StringVar(&questionFile, "qf", "", "Path to a file containing the question for the LLM.")
+	flag.Var(&questions, "q", "Specifies a question or text for the LLM. Can be used multiple times - all questions will be included.")
+	flag.BoolVar(&useClipboard, "c", false, "Use clipboard content as a question for the LLM.")
+	flag.Var(&questionFiles, "qf", "Path to a file containing a question for the LLM. Can be used multiple times.")
 	flag.StringVar(&outputFile, "output", "", "Write prompt to a file instead of the clipboard.")
 	flag.BoolVar(&useStdout, "stdout", false, "Write prompt to stdout instead of the clipboard.")
 	flag.BoolVar(&quietMode, "quiet", false, "Suppress all non-essential output. Useful with --stdout or --output for scripting.")
 	flag.BoolVar(&dryRun, "dry-run", false, "Perform a dry run. Lists the files that would be included in the prompt without generating it.")
 	flag.BoolVar(&showHelp, "h", false, "Displays this help message.")
-	flag.StringVar(&roleMessage, "role-message", "", "Pre-prompt message placed before all files.")
-	flag.StringVar(&extraContext, "extra-context", "", "Pre-prompt message placed before the question.")
-	flag.StringVar(&lastWords, "last-words", "", "Post-prompt message placed at the end of the whole message.")
 	flag.StringVar(&aliasName, "a", "", "Use a predefined alias from config files.")
 	flag.BoolVar(&listAliases, "list-aliases", false, "List all available aliases from config files.")
+	flag.BoolVar(&rawMode, "raw", false, "Raw mode: remove pre-written messages and use argument order for positioning.")
 
 	// Override usage message
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [-i <include_pattern>] [-e <exclude_pattern>] [-f <force_include_pattern>] [-q \"question\"] [-c] [-qf file] [--role-message \"msg\"] [--extra-context \"msg\"] [--last-words \"msg\"] [-a \"alias\"] [--list-aliases] [--stdout] [--quiet] [--dry-run] [--output file] [-h]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [-i <include_pattern>] [-e <exclude_pattern>] [-f <force_include_pattern>] [-q \"text\"] [-c] [-qf file] [--raw] [-a \"alias\"] [--list-aliases] [--stdout] [--quiet] [--dry-run] [--output file] [-h]\n\n", os.Args[0])
 		fmt.Fprintln(os.Stderr, "Options:")
 		// Custom print defaults to match README style
 		fmt.Fprintf(os.Stderr, "  -i <pattern> : %s\n", flag.Lookup("i").Usage)
 		fmt.Fprintf(os.Stderr, "  -e <pattern> : %s\n", flag.Lookup("e").Usage)
 		fmt.Fprintf(os.Stderr, "  -f <pattern> : %s\n", flag.Lookup("f").Usage)
-		fmt.Fprintf(os.Stderr, "  -q \"question\" : %s\n", flag.Lookup("q").Usage)
+		fmt.Fprintf(os.Stderr, "  -q \"text\"    : %s\n", flag.Lookup("q").Usage)
 		fmt.Fprintf(os.Stderr, "  -c            : %s\n", flag.Lookup("c").Usage)
 		fmt.Fprintf(os.Stderr, "  -qf <file>    : %s\n", flag.Lookup("qf").Usage)
-		fmt.Fprintf(os.Stderr, "  --role-message \"msg\" : %s\n", flag.Lookup("role-message").Usage)
-		fmt.Fprintf(os.Stderr, "  --extra-context \"msg\" : %s\n", flag.Lookup("extra-context").Usage)
-		fmt.Fprintf(os.Stderr, "  --last-words \"msg\" : %s\n", flag.Lookup("last-words").Usage)
+		fmt.Fprintf(os.Stderr, "  --raw         : %s\n", flag.Lookup("raw").Usage)
 		fmt.Fprintf(os.Stderr, "  -a \"alias\"    : %s\n", flag.Lookup("a").Usage)
 		fmt.Fprintf(os.Stderr, "  --list-aliases : %s\n", flag.Lookup("list-aliases").Usage)
 		fmt.Fprintf(os.Stderr, "  --stdout      : %s\n", flag.Lookup("stdout").Usage)
@@ -87,16 +90,17 @@ func init() {
 		fmt.Fprintf(os.Stderr, "  --output <file> : %s\n", flag.Lookup("output").Usage)
 		fmt.Fprintf(os.Stderr, "  -h            : %s\n", flag.Lookup("h").Usage)
 
-		fmt.Fprintln(os.Stderr, "\nNote: If multiple question input methods (-q, -c, -qf) are provided, the last one in the command line takes precedence.")
-		fmt.Fprintln(os.Stderr, "      For non-combining options (all except -i, -e, -f), the last occurrence takes precedence.")
+		fmt.Fprintln(os.Stderr, "\nNote: Multiple -q and -qf options accumulate (all are included in order).")
+		fmt.Fprintln(os.Stderr, "      In --raw mode, argument order determines positioning in the output.")
+		fmt.Fprintln(os.Stderr, "      For non-combining options, the last occurrence takes precedence.")
 		fmt.Fprintln(os.Stderr, "\nAliases:")
 		fmt.Fprintln(os.Stderr, "  Define aliases in .mpp.txt files using the format: alias_name: options")
-		fmt.Fprintln(os.Stderr, "  Example: js_dev: --role-message \"You are a JS expert\" -i **.js")
+		fmt.Fprintln(os.Stderr, "  Example: js_dev: -i **/*.js -e **/__tests__/*")
 		fmt.Fprintln(os.Stderr, "\nExamples:")
 		fmt.Fprintln(os.Stderr, "  make-project-prompt -i 'src/**/*.js' -e '**/__tests__/*' -q \"Refactor this React code to use Hooks.\"")
-		fmt.Fprintln(os.Stderr, "  make-project-prompt -i '*.go' -f 'assets/*.bin' -c")
+		fmt.Fprintln(os.Stderr, "  make-project-prompt -i '*.go' -q \"First question\" -q \"Second question\"  # Both questions included")
+		fmt.Fprintln(os.Stderr, "  make-project-prompt --raw -q \"Header\" -i '*.py' -q \"Footer\"  # Raw mode with positioning")
 		fmt.Fprintln(os.Stderr, "  make-project-prompt -i '*.py' -qf question.txt  # Read question from file")
-		fmt.Fprintln(os.Stderr, "  make-project-prompt -i '*.py' -q \"Initial question\" -c  # Clipboard content will be used (last option wins)")
 		fmt.Fprintln(os.Stderr, "  make-project-prompt -a js_dev -q \"Review this code\"  # Use the js_dev alias")
 		fmt.Fprintln(os.Stderr, "  make-project-prompt --list-aliases  # List all available aliases")
 	}
@@ -110,36 +114,225 @@ func init() {
 
 // processFilesAndGeneratePrompt handles file processing and prompt generation
 func processFilesAndGeneratePrompt() (string, int, error) {
-	// Create file config
-	fileConfig := files.Config{
-		IncludePatterns:      includePatterns,
-		ExcludePatterns:      excludePatterns,
-		ForceIncludePatterns: forceIncludePatterns,
+	// Build ContentItems for raw mode based on argOrder
+	var contentItems []prompt.ContentItem
+	var allFileInfos []files.FileInfo
+
+	if rawMode && len(argOrder) > 0 {
+		// In raw mode with explicit order, list files per pattern group
+		for _, item := range argOrder {
+			switch item.Type {
+			case "question":
+				contentItems = append(contentItems, prompt.ContentItem{
+					Type:    "question",
+					Content: item.Content,
+					Order:   item.Order,
+				})
+			case "question_file":
+				fileContent, err := os.ReadFile(item.Content)
+				if err != nil {
+					return "", 0, fmt.Errorf("error reading from file %s: %w", item.Content, err)
+				}
+				if len(fileContent) == 0 {
+					return "", 0, fmt.Errorf("file %s is empty", item.Content)
+				}
+				contentItems = append(contentItems, prompt.ContentItem{
+					Type:    "question",
+					Content: string(fileContent),
+					Order:   item.Order,
+				})
+			case "clipboard":
+				clipContent, err := clipboard.ReadAll()
+				if err != nil {
+					return "", 0, fmt.Errorf("error reading from clipboard: %w", err)
+				}
+				if clipContent == "" {
+					return "", 0, fmt.Errorf("clipboard is empty")
+				}
+				contentItems = append(contentItems, prompt.ContentItem{
+					Type:    "question",
+					Content: clipContent,
+					Order:   item.Order,
+				})
+			case "include", "force_include":
+				// List files for this specific pattern
+				fileConfig := files.Config{
+					IncludePatterns: []string{item.Content},
+					ExcludePatterns: excludePatterns,
+				}
+				if item.Type == "force_include" {
+					fileConfig.ForceIncludePatterns = []string{item.Content}
+					fileConfig.IncludePatterns = []string{}
+				}
+
+				fileInfos, err := files.ListGitFiles(fileConfig)
+				if err != nil {
+					return "", 0, fmt.Errorf("failed to list Git files for pattern %s: %w", item.Content, err)
+				}
+
+				// Add these files to allFileInfos for later counting
+				allFileInfos = append(allFileInfos, fileInfos...)
+
+				// Create a file_group item with the matched files
+				contentItems = append(contentItems, prompt.ContentItem{
+					Type:         "file_group",
+					FilePatterns: []string{item.Content},
+					Files:        fileInfos,
+					Order:        item.Order,
+				})
+			}
+		}
+	} else {
+		// Non-raw mode or raw mode without explicit patterns: list all files at once
+		fileConfig := files.Config{
+			IncludePatterns:      includePatterns,
+			ExcludePatterns:      excludePatterns,
+			ForceIncludePatterns: forceIncludePatterns,
+		}
+
+		fileInfos, err := files.ListGitFiles(fileConfig)
+		if err != nil {
+			return "", 0, fmt.Errorf("failed to list Git files: %w", err)
+		}
+		allFileInfos = fileInfos
+
+		if rawMode && len(argOrder) == 0 {
+			// Raw mode with no explicit -i flags: add files first, then questions
+			if len(fileInfos) > 0 {
+				contentItems = append(contentItems, prompt.ContentItem{
+					Type:         "file_group",
+					FilePatterns: []string{"*"},
+					Files:        fileInfos,
+					Order:        0,
+				})
+			}
+
+			// Then add questions
+			order := 1
+			for _, q := range questions {
+				contentItems = append(contentItems, prompt.ContentItem{
+					Type:    "question",
+					Content: q,
+					Order:   order,
+				})
+				order++
+			}
+
+			for _, qf := range questionFiles {
+				fileContent, err := os.ReadFile(qf)
+				if err != nil {
+					return "", 0, fmt.Errorf("error reading from file %s: %w", qf, err)
+				}
+				if len(fileContent) == 0 {
+					return "", 0, fmt.Errorf("file %s is empty", qf)
+				}
+				contentItems = append(contentItems, prompt.ContentItem{
+					Type:    "question",
+					Content: string(fileContent),
+					Order:   order,
+				})
+				order++
+			}
+
+			if useClipboard {
+				clipContent, err := clipboard.ReadAll()
+				if err != nil {
+					return "", 0, fmt.Errorf("error reading from clipboard: %w", err)
+				}
+				if clipContent == "" {
+					return "", 0, fmt.Errorf("clipboard is empty")
+				}
+				contentItems = append(contentItems, prompt.ContentItem{
+					Type:    "question",
+					Content: clipContent,
+					Order:   order,
+				})
+			}
+		}
 	}
 
-	// List Git files with include/exclude/force patterns
-	fileInfos, err := files.ListGitFiles(fileConfig)
-	if err != nil {
-		return "", 0, fmt.Errorf("failed to list Git files: %w", err)
-	}
-
-	if len(fileInfos) == 0 {
+	if len(allFileInfos) == 0 {
 		if len(includePatterns) > 0 || len(forceIncludePatterns) > 0 {
 			allPatterns := append([]string{}, includePatterns...)
 			allPatterns = append(allPatterns, forceIncludePatterns...)
 			return "", 0, fmt.Errorf("no files matched the specified patterns: %v\nTry using different patterns or check if the files exist", allPatterns)
-		} else {
+		}
+		// In raw mode with questions but no files, allow it (questions-only mode)
+		// In other modes, require files
+		isQuestionsOnlyRawMode := rawMode && len(argOrder) > 0
+		if !isQuestionsOnlyRawMode {
 			return "", 0, fmt.Errorf("no files found in the Git repository. Make sure you have committed or staged some files")
 		}
 	}
 
-	printInfo("Found %d files matching the specified patterns.\n", len(fileInfos))
+	printInfo("Found %d files matching the specified patterns.\n", len(allFileInfos))
+
+	// Collect all questions for default mode (non-raw)
+	var allQuestions []prompt.ContentItem
+	if !rawMode {
+		order := 0
+
+		// Add questions from -q flags
+		for _, q := range questions {
+			allQuestions = append(allQuestions, prompt.ContentItem{
+				Type:    "question",
+				Content: q,
+				Order:   order,
+			})
+			order++
+		}
+
+		// Add questions from -qf flags
+		for _, qf := range questionFiles {
+			fileContent, err := os.ReadFile(qf)
+			if err != nil {
+				return "", 0, fmt.Errorf("error reading from file %s: %w", qf, err)
+			}
+			if len(fileContent) == 0 {
+				return "", 0, fmt.Errorf("file %s is empty", qf)
+			}
+			allQuestions = append(allQuestions, prompt.ContentItem{
+				Type:    "question",
+				Content: string(fileContent),
+				Order:   order,
+			})
+			order++
+		}
+
+		// Add question from clipboard if -c is used
+		if useClipboard {
+			clipContent, err := clipboard.ReadAll()
+			if err != nil {
+				return "", 0, fmt.Errorf("error reading from clipboard: %w", err)
+			}
+			if clipContent == "" {
+				return "", 0, fmt.Errorf("clipboard is empty")
+			}
+			allQuestions = append(allQuestions, prompt.ContentItem{
+				Type:    "question",
+				Content: clipContent,
+				Order:   order,
+			})
+		}
+	}
 
 	// Generate prompt
-	generator := prompt.NewGenerator(fileInfos, question, quietMode)
-	generator.RoleMessage = roleMessage
-	generator.ExtraContext = extraContext
-	generator.LastWords = lastWords
+	generator := prompt.NewGenerator(allFileInfos, "", quietMode)
+	generator.RawMode = rawMode
+	generator.Questions = allQuestions
+	generator.ContentItems = contentItems
+
+	// Add default question if no questions provided (non-raw mode only)
+	if !rawMode && len(allQuestions) == 0 {
+		generator.Questions = []prompt.ContentItem{
+			{
+				Type:    "question",
+				Content: "[YOUR QUESTION HERE]",
+				Order:   0,
+			},
+		}
+	}
+
 	promptText, fileCount, err := generator.Generate()
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to generate prompt: %w", err)
@@ -195,6 +388,10 @@ func expandAliasesInArgs(args []string) ([]string, error) {
 func customParseArgs() {
 	args := os.Args[1:] // Skip the program name
 
+	// Reset argOrder for this parse
+	argOrder = []argOrderItem{}
+	orderCounter := 0
+
 	// Define a helper function to check if an argument is a flag
 	isFlag := func(arg string) bool {
 		return strings.HasPrefix(arg, "-")
@@ -210,12 +407,17 @@ func customParseArgs() {
 			// Process the flag
 			currentFlag = arg
 
-			// Handle boolean flags (like -h, -c, --stdout, --quiet)
+			// Handle boolean flags (like -h, -c, --stdout, --quiet, --raw)
 			if currentFlag == "-h" || currentFlag == "--h" {
 				showHelp = true
 				continue
 			} else if currentFlag == "-c" || currentFlag == "--c" {
 				useClipboard = true
+				argOrder = append(argOrder, argOrderItem{
+					Type:  "clipboard",
+					Order: orderCounter,
+				})
+				orderCounter++
 				continue
 			} else if currentFlag == "-stdout" || currentFlag == "--stdout" {
 				useStdout = true
@@ -229,6 +431,9 @@ func customParseArgs() {
 			} else if currentFlag == "-list-aliases" || currentFlag == "--list-aliases" {
 				listAliases = true
 				continue
+			} else if currentFlag == "-raw" || currentFlag == "--raw" {
+				rawMode = true
+				continue
 			}
 
 			// For flags that take a value, get the next argument
@@ -239,23 +444,41 @@ func customParseArgs() {
 				// Process the flag and its value
 				switch currentFlag {
 				case "-q", "--q":
-					question = value
+					questions = append(questions, value)
+					argOrder = append(argOrder, argOrderItem{
+						Type:    "question",
+						Content: value,
+						Order:   orderCounter,
+					})
+					orderCounter++
 				case "-qf", "--qf":
-					questionFile = value
+					questionFiles = append(questionFiles, value)
+					argOrder = append(argOrder, argOrderItem{
+						Type:    "question_file",
+						Content: value,
+						Order:   orderCounter,
+					})
+					orderCounter++
 				case "-output", "--output":
 					outputFile = value
 				case "-i", "--i":
 					includePatterns = append(includePatterns, value)
+					argOrder = append(argOrder, argOrderItem{
+						Type:    "include",
+						Content: value,
+						Order:   orderCounter,
+					})
+					orderCounter++
 				case "-e", "--e":
 					excludePatterns = append(excludePatterns, value)
 				case "-f", "--f":
 					forceIncludePatterns = append(forceIncludePatterns, value)
-				case "-role-message", "--role-message":
-					roleMessage = value
-				case "-extra-context", "--extra-context":
-					extraContext = value
-				case "-last-words", "--last-words":
-					lastWords = value
+					argOrder = append(argOrder, argOrderItem{
+						Type:    "force_include",
+						Content: value,
+						Order:   orderCounter,
+					})
+					orderCounter++
 				case "-a", "--a":
 					aliasName = value
 				}
@@ -263,12 +486,42 @@ func customParseArgs() {
 		} else if currentFlag == "-i" || currentFlag == "--i" {
 			// This is a non-flag argument following -i, add it to includePatterns
 			includePatterns = append(includePatterns, arg)
+			argOrder = append(argOrder, argOrderItem{
+				Type:    "include",
+				Content: arg,
+				Order:   orderCounter,
+			})
+			orderCounter++
 		} else if currentFlag == "-e" || currentFlag == "--e" {
 			// This is a non-flag argument following -e, add it to excludePatterns
 			excludePatterns = append(excludePatterns, arg)
 		} else if currentFlag == "-f" || currentFlag == "--f" {
 			// This is a non-flag argument following -f, add it to forceIncludePatterns
 			forceIncludePatterns = append(forceIncludePatterns, arg)
+			argOrder = append(argOrder, argOrderItem{
+				Type:    "force_include",
+				Content: arg,
+				Order:   orderCounter,
+			})
+			orderCounter++
+		} else if currentFlag == "-q" || currentFlag == "--q" {
+			// This is a non-flag argument following -q, add it to questions
+			questions = append(questions, arg)
+			argOrder = append(argOrder, argOrderItem{
+				Type:    "question",
+				Content: arg,
+				Order:   orderCounter,
+			})
+			orderCounter++
+		} else if currentFlag == "-qf" || currentFlag == "--qf" {
+			// This is a non-flag argument following -qf, add it to questionFiles
+			questionFiles = append(questionFiles, arg)
+			argOrder = append(argOrder, argOrderItem{
+				Type:    "question_file",
+				Content: arg,
+				Order:   orderCounter,
+			})
+			orderCounter++
 		}
 	}
 }
@@ -384,73 +637,6 @@ func main() {
 		log.Fatalf("Error: %v", err)
 	}
 
-	// Handle question input strategy (last one wins)
-	// Determine which flag was provided last by analyzing original args
-	lastQIndex := -1
-	lastCIndex := -1
-	lastQFIndex := -1
-
-	for i, arg := range originalArgs {
-		switch arg {
-		case "-q", "--q":
-			lastQIndex = i
-		case "-c", "--c":
-			lastCIndex = i
-		case "-qf", "--qf":
-			lastQFIndex = i
-		}
-	}
-
-	// Use the last provided method
-	if lastQFIndex > lastQIndex && lastQFIndex > lastCIndex && questionFile != "" {
-		// Read from file (it was the last option)
-		fileContent, err := os.ReadFile(questionFile)
-		if err != nil {
-			log.Fatalf("Error reading from file %s: %v\nMake sure the file exists and is readable.", questionFile, err)
-		}
-		if len(fileContent) == 0 {
-			log.Fatalf("Error: File %s is empty. Please provide a file with content.", questionFile)
-		}
-		question = string(fileContent)
-		printInfo("Using question from file %s (last option wins).\n", questionFile)
-	} else if lastCIndex > lastQIndex && lastCIndex > lastQFIndex && useClipboard {
-		// Read from clipboard (it was the last option)
-		clipContent, err := clipboard.ReadAll()
-		if err != nil {
-			log.Fatalf("Error reading from clipboard: %v\nMake sure you have content in your clipboard.", err)
-		}
-		if clipContent == "" {
-			log.Fatalf("Error: Clipboard is empty. Please copy your question to the clipboard first.")
-		}
-		question = clipContent
-		printInfo("Using question from clipboard (last option wins).\n")
-	} else if lastQIndex > lastCIndex && lastQIndex > lastQFIndex && question != "[YOUR QUESTION HERE]" {
-		// Using question from -q flag (it was the last option)
-		printInfo("Using question from command line (last option wins).\n")
-	} else if questionFile != "" {
-		// Only file flag was provided
-		fileContent, err := os.ReadFile(questionFile)
-		if err != nil {
-			log.Fatalf("Error reading from file %s: %v\nMake sure the file exists and is readable.", questionFile, err)
-		}
-		if len(fileContent) == 0 {
-			log.Fatalf("Error: File %s is empty. Please provide a file with content.", questionFile)
-		}
-		question = string(fileContent)
-		printInfo("Using question from file %s.\n", questionFile)
-	} else if useClipboard {
-		// Only clipboard flag was provided
-		clipContent, err := clipboard.ReadAll()
-		if err != nil {
-			log.Fatalf("Error reading from clipboard: %v\nMake sure you have content in your clipboard.", err)
-		}
-		if clipContent == "" {
-			log.Fatalf("Error: Clipboard is empty. Please copy your question to the clipboard first.")
-		}
-		question = clipContent
-		printInfo("Using question from clipboard.\n")
-	}
-
 	// Display options
 	printInfo("Inclusion patterns: %v\n", includePatterns)
 	if len(excludePatterns) > 0 {
@@ -459,7 +645,18 @@ func main() {
 	if len(forceIncludePatterns) > 0 {
 		printInfo("Force inclusion patterns: %v\n", forceIncludePatterns)
 	}
-	printInfo("Question: %s\n", question)
+	if len(questions) > 0 {
+		printInfo("Questions from -q: %v\n", questions)
+	}
+	if len(questionFiles) > 0 {
+		printInfo("Question files from -qf: %v\n", questionFiles)
+	}
+	if useClipboard {
+		printInfo("Using clipboard content as question\n")
+	}
+	if rawMode {
+		printInfo("Raw mode enabled\n")
+	}
 
 	// If dry-run is requested, list files and exit.
 	if dryRun {
@@ -516,8 +713,8 @@ func main() {
 
 	// User feedback
 	printInfo("Number of files included: %d\n", fileCount)
-	if question == "[YOUR QUESTION HERE]" {
-		printInfo("NOTE: No question specified with -q. Remember to replace '[YOUR QUESTION HERE]'.\n")
+	if len(questions) == 0 && len(questionFiles) == 0 && !useClipboard {
+		printInfo("NOTE: No question specified. Remember to replace '[YOUR QUESTION HERE]'.\n")
 	}
 	if !useStdout {
 		printInfo("Paste (Ctrl+Shift+V or middle-click) into your LLM.\n")

@@ -143,7 +143,9 @@ common: --role-message "From project"
 
 	// Change to subDir to test loading
 	oldDir, _ := os.Getwd()
-	defer os.Chdir(oldDir)
+	defer func() {
+		_ = os.Chdir(oldDir)
+	}()
 	err = os.Chdir(subDir)
 	if err != nil {
 		t.Fatalf("Failed to change directory: %v", err)
