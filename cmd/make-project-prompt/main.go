@@ -313,7 +313,6 @@ func processFilesAndGeneratePrompt() (string, int, error) {
 				Content: clipContent,
 				Order:   order,
 			})
-			order++
 		}
 	}
 
